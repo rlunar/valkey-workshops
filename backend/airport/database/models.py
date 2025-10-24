@@ -14,7 +14,7 @@ This module defines the core database models used in the Valkey caching workshop
 """
 
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, Index, Numeric
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import declarative_base
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from typing import List

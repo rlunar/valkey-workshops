@@ -13,7 +13,7 @@ Includes connection pooling, session management, and error handling.
 import os
 import logging
 from typing import Optional, Dict, Any
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.pool import StaticPool, QueuePool
@@ -185,7 +185,7 @@ class DatabaseConfig:
             
             # Test connection
             with self.engine.connect() as conn:
-                conn.execute("SELECT 1")
+                conn.execute(text("SELECT 1"))
             
             # Create session factory
             self.SessionLocal = sessionmaker(
@@ -220,7 +220,7 @@ class DatabaseConfig:
                 cursor.close()
         
         @event.listens_for(self.engine, "engine_connect")
-        def receive_engine_connect(conn, branch):
+        def receive_engine_connect(conn):
             """Log successful connections."""
             logger.debug("Database connection established")
     
@@ -296,7 +296,7 @@ class DatabaseConfig:
                 self.initialize()
             
             with self.engine.connect() as conn:
-                conn.execute("SELECT 1")
+                conn.execute(text("SELECT 1"))
             return True
         except Exception as e:
             logger.error(f"Database connection test failed: {e}")
