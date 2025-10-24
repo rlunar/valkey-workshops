@@ -1,0 +1,246 @@
+<!-- Cache Debug Panel Template -->
+<div class="flDebugPanelContent">
+    <h3>Cache Statistics</h3>
+    
+    <!-- Cache Configuration -->
+    <div class="flDebugPanelSection">
+        <h4>Configuration</h4>
+        <table class="flDebugTable">
+            <tbody>
+                <tr>
+                    <td>Cache Type</td>
+                    <td>{{ cache_config.type }}</td>
+                </tr>
+                <tr>
+                    <td>Redis URL</td>
+                    <td>{{ cache_config.redis_url }}</td>
+                </tr>
+                <tr>
+                    <td>Default Timeout</td>
+                    <td>{{ cache_config.default_timeout }}s</td>
+                </tr>
+                <tr>
+                    <td>Key Prefix</td>
+                    <td>{{ cache_config.key_prefix or 'None' }}</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+    
+    <!-- Overall Cache Statistics -->
+    <div class="flDebugPanelSection">
+        <h4>Overall Statistics</h4>
+        <table class="flDebugTable">
+            <tbody>
+                <tr>
+                    <td>Status</td>
+                    <td class="{% if cache_stats.status == 'connected' %}flDebugGood{% else %}flDebugBad{% endif %}">
+                        {{ cache_stats.status|title }}
+                    </td>
+                </tr>
+                <tr>
+                    <td>Total Operations</td>
+                    <td>{{ cache_stats.total_operations or 0 }}</td>
+                </tr>
+                <tr>
+                    <td>Cache Hits</td>
+                    <td class="flDebugGood">{{ cache_stats.hits or 0 }}</td>
+                </tr>
+                <tr>
+                    <td>Cache Misses</td>
+                    <td class="flDebugBad">{{ cache_stats.misses or 0 }}</td>
+                </tr>
+                <tr>
+                    <td>Hit Rate</td>
+                    <td class="{% if cache_stats.hit_rate > 70 %}flDebugGood{% elif cache_stats.hit_rate > 40 %}flDebugWarning{% else %}flDebugBad{% endif %}">
+                        {{ cache_stats.hit_rate or 0 }}%
+                    </td>
+                </tr>
+                <tr>
+                    <td>Sets</td>
+                    <td>{{ cache_stats.sets or 0 }}</td>
+                </tr>
+                <tr>
+                    <td>Deletes</td>
+                    <td>{{ cache_stats.deletes or 0 }}</td>
+                </tr>
+                <tr>
+                    <td>Errors</td>
+                    <td class="{% if cache_stats.errors > 0 %}flDebugBad{% else %}flDebugGood{% endif %}">
+                        {{ cache_stats.errors or 0 }}
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+    
+    <!-- Redis/Valkey Specific Stats -->
+    {% if cache_stats.memory_used %}
+    <div class="flDebugPanelSection">
+        <h4>Memory Usage</h4>
+        <table class="flDebugTable">
+            <tbody>
+                <tr>
+                    <td>Memory Used</td>
+                    <td>{{ cache_stats.memory_used }}</td>
+                </tr>
+                <tr>
+                    <td>Memory Peak</td>
+                    <td>{{ cache_stats.memory_peak }}</td>
+                </tr>
+                <tr>
+                    <td>Keyspace Hits</td>
+                    <td>{{ cache_stats.keyspace_hits or 0 }}</td>
+                </tr>
+                <tr>
+                    <td>Keyspace Misses</td>
+                    <td>{{ cache_stats.keyspace_misses or 0 }}</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+    
+    <!-- Request-Specific Statistics -->
+    {% if request_stats %}
+    <div class="flDebugPanelSection">
+        <h4>This Request</h4>
+        <table class="flDebugTable">
+            <tbody>
+                <tr>
+                    <td>Cache Hits</td>
+                    <td class="flDebugGood">{{ request_stats.hits or 0 }}</td>
+                </tr>
+                <tr>
+                    <td>Cache Misses</td>
+                    <td class="flDebugBad">{{ request_stats.misses or 0 }}</td>
+                </tr>
+                <tr>
+                    <td>Cache Sets</td>
+                    <td>{{ request_stats.sets or 0 }}</td>
+                </tr>
+                <tr>
+                    <td>Cache Deletes</td>
+                    <td>{{ request_stats.deletes or 0 }}</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+    
+    <!-- Cache Operations for This Request -->
+    {% if request_operations %}
+    <div class="flDebugPanelSection">
+        <h4>Cache Operations ({{ request_operations|length }})</h4>
+        <table class="flDebugTable">
+            <thead>
+                <tr>
+                    <th>Operation</th>
+                    <th>Key</th>
+                    <th>Result</th>
+                    <th>Duration</th>
+                    <th>Timestamp</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for op in request_operations %}
+                <tr>
+                    <td class="{% if op.operation == 'hit' %}flDebugGood{% elif op.operation == 'miss' %}flDebugBad{% elif op.operation == 'error' %}flDebugBad{% else %}flDebugNeutral{% endif %}">
+                        {{ op.operation|title }}
+                    </td>
+                    <td class="flDebugCode">{{ op.key }}</td>
+                    <td>{{ op.result or 'N/A' }}</td>
+                    <td>
+                        {% if op.duration %}
+                            {{ "%.2f"|format(op.duration) }}ms
+                        {% else %}
+                            N/A
+                        {% endif %}
+                    </td>
+                    <td>{{ "%.3f"|format(op.timestamp) }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+    
+    <!-- Cache Keys Overview -->
+    {% if cache_keys %}
+    <div class="flDebugPanelSection">
+        <h4>Cache Keys ({{ total_keys }} total, showing first 50)</h4>
+        <div class="flDebugCode" style="max-height: 200px; overflow-y: auto; background: #f5f5f5; padding: 10px; border: 1px solid #ddd;">
+            {% for key in cache_keys %}
+                <div>{{ key }}</div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+    
+    <!-- Error Information -->
+    {% if cache_stats.error %}
+    <div class="flDebugPanelSection">
+        <h4>Error Information</h4>
+        <div class="flDebugBad">
+            {{ cache_stats.error }}
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<style>
+.flDebugTable {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 10px;
+}
+
+.flDebugTable th,
+.flDebugTable td {
+    padding: 5px 10px;
+    border: 1px solid #ddd;
+    text-align: left;
+}
+
+.flDebugTable th {
+    background-color: #f5f5f5;
+    font-weight: bold;
+}
+
+.flDebugGood {
+    color: #28a745;
+    font-weight: bold;
+}
+
+.flDebugBad {
+    color: #dc3545;
+    font-weight: bold;
+}
+
+.flDebugWarning {
+    color: #ffc107;
+    font-weight: bold;
+}
+
+.flDebugNeutral {
+    color: #6c757d;
+}
+
+.flDebugCode {
+    font-family: monospace;
+    background-color: #f8f9fa;
+    padding: 2px 4px;
+    border-radius: 3px;
+}
+
+.flDebugPanelSection {
+    margin-bottom: 20px;
+}
+
+.flDebugPanelSection h4 {
+    margin-bottom: 10px;
+    color: #333;
+    border-bottom: 1px solid #ddd;
+    padding-bottom: 5px;
+}
+</style>

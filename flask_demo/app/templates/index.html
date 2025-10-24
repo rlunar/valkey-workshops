@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+
+{% block title %}Home - Flask Caching Demo{% endblock %}
+
+{% block content %}
+<h1>Flask Caching Demo</h1>
+<p>Welcome to the Flask caching demonstration application.</p>
+
+<div class="info-section">
+    <h2>About This Demo</h2>
+    <p>This application demonstrates various caching strategies using Valkey (Redis-compatible) cache:</p>
+    <ul>
+        <li>Database query result caching</li>
+        <li>API response caching</li>
+        <li>Cache-aside pattern implementation</li>
+        <li>Cache invalidation strategies</li>
+        <li>Cache warming and proactive refresh</li>
+    </ul>
+</div>
+
+<div class="stats-overview">
+    <h2>Quick Statistics</h2>
+    <div class="stats-grid">
+        <div class="stat-card">
+            <h3>Cache Status</h3>
+            <p class="stat-value {{ 'success' if cache_stats.status == 'connected' else 'error' }}">
+                {{ cache_stats.status|title }}
+            </p>
+            <p class="stat-label">{{ cache_stats.cache_type|title }} Cache</p>
+        </div>
+        
+        <div class="stat-card">
+            <h3>Hit Rate</h3>
+            <p class="stat-value">{{ cache_stats.hit_rate }}%</p>
+            <p class="stat-label">{{ cache_stats.hits }} hits / {{ cache_stats.total_operations }} total</p>
+        </div>
+        
+        <div class="stat-card">
+            <h3>Database</h3>
+            <p class="stat-value">{{ db_stats.total_products }}</p>
+            <p class="stat-label">Products in {{ db_stats.total_categories }} categories</p>
+        </div>
+        
+        {% if cache_stats.memory_used %}
+        <div class="stat-card">
+            <h3>Memory Usage</h3>
+            <p class="stat-value">{{ cache_stats.memory_used }}</p>
+            <p class="stat-label">Peak: {{ cache_stats.memory_peak }}</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="navigation-section">
+    <h2>Explore the Demo</h2>
+    <div class="nav-grid">
+        <div class="nav-card">
+            <h3><a href="{{ url_for('main.products') }}">Products</a></h3>
+            <p>Browse products with database query caching and pagination</p>
+        </div>
+        
+        <div class="nav-card">
+            <h3><a href="{{ url_for('main.cache_stats') }}">Cache Statistics</a></h3>
+            <p>Detailed cache performance metrics and key inspection</p>
+        </div>
+        
+        <div class="nav-card">
+            <h3><a href="{{ url_for('api.api_products') }}">API Endpoints</a></h3>
+            <p>JSON API with response caching demonstration</p>
+        </div>
+        
+        <div class="nav-card">
+            <h3><a href="{{ url_for('main.clear_cache') }}">Cache Management</a></h3>
+            <p>Manual cache invalidation and warming tools</p>
+        </div>
+    </div>
+</div>
+
+<div class="debug-info">
+    <h2>Debug Information</h2>
+    <p>Use the Flask Debug Toolbar (bottom of page) to monitor:</p>
+    <ul>
+        <li><strong>Database Panel:</strong> Query count, execution time, and SQL statements</li>
+        <li><strong>Cache Panel:</strong> Hit/miss ratios, cache operations, and key inspection</li>
+        <li><strong>Profiler Panel:</strong> Request timing breakdown and performance bottlenecks</li>
+        <li><strong>Template Panel:</strong> Template rendering time and context variables</li>
+    </ul>
+    {% if config.DEBUG %}
+    <div class="debug-notice">
+        <p><strong>Debug Mode:</strong> Detailed performance metrics are being collected for this request.</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

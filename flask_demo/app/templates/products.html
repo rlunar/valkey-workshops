@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+
+{% block title %}Products - Flask Caching Demo{% endblock %}
+
+{% block content %}
+<div class="products-page">
+    <div class="page-header">
+        <h1>Products</h1>
+        <p>This page demonstrates database query caching with pagination and filtering.</p>
+    </div>
+    
+    <div class="filters-section">
+        <form method="GET" class="filters-form">
+            <div class="filter-group">
+                <label for="category">Filter by Category:</label>
+                <select name="category" id="category" onchange="this.form.submit()">
+                    <option value="">All Categories</option>
+                    {% for category in categories %}
+                    <option value="{{ category.id }}" 
+                            {{ 'selected' if current_category == category.id }}>
+                        {{ category.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            
+            <div class="filter-group">
+                <label for="per_page">Items per page:</label>
+                <select name="per_page" id="per_page" onchange="this.form.submit()">
+                    <option value="5" {{ 'selected' if request.args.get('per_page', '10') == '5' }}>5</option>
+                    <option value="10" {{ 'selected' if request.args.get('per_page', '10') == '10' }}>10</option>
+                    <option value="20" {{ 'selected' if request.args.get('per_page', '10') == '20' }}>20</option>
+                </select>
+            </div>
+        </form>
+    </div>
+    
+    {% if products_data.products %}
+    <div class="products-grid">
+        {% for product in products_data.products %}
+        <div class="product-card">
+            <div class="product-header">
+                <h3><a href="{{ url_for('main.product_detail', product_id=product.id) }}">{{ product.name }}</a></h3>
+                <p class="product-price">${{ "%.2f"|format(product.price) }}</p>
+            </div>
+            
+            <div class="product-body">
+                <p class="product-description">
+                    {{ product.description[:150] }}{% if product.description|length > 150 %}...{% endif %}
+                </p>
+                <p class="product-category">
+                    <strong>Category:</strong> {{ product.category_name }}
+                </p>
+            </div>
+            
+            <div class="product-footer">
+                <a href="{{ url_for('main.product_detail', product_id=product.id) }}" class="btn btn-primary">
+                    View Details
+                </a>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    
+    <!-- Pagination -->
+    {% if products_data.pagination.pages > 1 %}
+    <div class="pagination">
+        <div class="pagination-info">
+            <p>
+                Showing {{ ((products_data.pagination.page - 1) * products_data.pagination.per_page) + 1 }} 
+                to {{ products_data.pagination.page * products_data.pagination.per_page if products_data.pagination.page * products_data.pagination.per_page < products_data.pagination.total else products_data.pagination.total }}
+                of {{ products_data.pagination.total }} products
+            </p>
+        </div>
+        
+        <div class="pagination-links">
+            {% if products_data.pagination.has_prev %}
+                <a href="{{ url_for('main.products', page=products_data.pagination.prev_num, 
+                                  category=current_category, per_page=request.args.get('per_page', 10)) }}" 
+                   class="btn btn-secondary">Previous</a>
+            {% endif %}
+            
+            {% for page_num in range(1, products_data.pagination.pages + 1) %}
+                {% if page_num == products_data.pagination.page %}
+                    <span class="current-page">{{ page_num }}</span>
+                {% elif page_num <= 3 or page_num > products_data.pagination.pages - 3 or (page_num >= products_data.pagination.page - 1 and page_num <= products_data.pagination.page + 1) %}
+                    <a href="{{ url_for('main.products', page=page_num, 
+                                      category=current_category, per_page=request.args.get('per_page', 10)) }}" 
+                       class="page-link">{{ page_num }}</a>
+                {% elif page_num == 4 and products_data.pagination.page > 5 %}
+                    <span class="ellipsis">...</span>
+                {% elif page_num == products_data.pagination.pages - 3 and products_data.pagination.page < products_data.pagination.pages - 4 %}
+                    <span class="ellipsis">...</span>
+                {% endif %}
+            {% endfor %}
+            
+            {% if products_data.pagination.has_next %}
+                <a href="{{ url_for('main.products', page=products_data.pagination.next_num, 
+                                  category=current_category, per_page=request.args.get('per_page', 10)) }}" 
+                   class="btn btn-secondary">Next</a>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+    
+    {% else %}
+    <div class="no-products">
+        <h2>No Products Found</h2>
+        <p>{% if current_category %}No products found in the selected category.{% else %}No products available. Try seeding the database first.{% endif %}</p>
+        {% if not current_category %}
+        <p>Run <code>flask seed-db</code> to add sample products.</p>
+        {% endif %}
+    </div>
+    {% endif %}
+    
+    <div class="cache-info">
+        <h3>Caching Information</h3>
+        <div class="cache-details">
+            <p><strong>Query Caching:</strong> Product listings are cached for 5 minutes to reduce database load.</p>
+            <p><strong>Category Caching:</strong> Category data is cached for 10 minutes as it changes infrequently.</p>
+            <p><strong>Pagination:</strong> Each page is cached separately with filters as part of the cache key.</p>
+            <p><strong>Cache Keys:</strong> 
+                <code>products:list:page_{{ products_data.pagination.page }}:per_page_{{ products_data.pagination.per_page }}{% if current_category %}:category_{{ current_category }}{% endif %}</code>
+            </p>
+        </div>
+    </div>
+</div>
+{% endblock %}

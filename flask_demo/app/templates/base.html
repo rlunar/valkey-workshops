@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Flask Caching Demo{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <header>
+        <div class="header-content">
+            <h1 class="site-title">
+                <a href="{{ url_for('main.index') }}">Flask Caching Demo</a>
+            </h1>
+            <nav class="main-nav">
+                <ul>
+                    <li><a href="{{ url_for('main.index') }}" 
+                           class="{{ 'active' if request.endpoint == 'main.index' }}">Home</a></li>
+                    <li><a href="{{ url_for('main.products') }}" 
+                           class="{{ 'active' if request.endpoint in ['main.products', 'main.product_detail'] }}">Products</a></li>
+                    <li><a href="{{ url_for('main.cache_stats') }}" 
+                           class="{{ 'active' if request.endpoint == 'main.cache_stats' }}">Statistics</a></li>
+                    <li class="dropdown">
+                        <a href="#" class="dropdown-toggle">Tools</a>
+                        <ul class="dropdown-menu">
+                            <li><a href="{{ url_for('main.clear_cache') }}">Clear Cache</a></li>
+                            <li><a href="{{ url_for('main.warm_cache') }}">Warm Cache</a></li>
+                            <li><a href="{{ url_for('api.api_products') }}">API Demo</a></li>
+                        </ul>
+                    </li>
+                </ul>
+            </nav>
+        </div>
+    </header>
+    
+    <main class="main-content">
+        <!-- Flash messages -->
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="flash-messages">
+                    {% for category, message in messages %}
+                        <div class="flash-message flash-{{ category }}">
+                            {{ message }}
+                            <button class="flash-close" onclick="this.parentElement.style.display='none'">&times;</button>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+        
+        {% block content %}{% endblock %}
+    </main>
+    
+    <footer class="site-footer">
+        <div class="footer-content">
+            <p>Flask Caching Demo - Demonstrating Valkey/Redis caching patterns</p>
+            <p>Check the Debug Toolbar below for detailed performance metrics</p>
+            {% if config.DEBUG %}
+            <div class="debug-notice">
+                <small>Debug Mode Active - Performance metrics available in toolbar</small>
+            </div>
+            {% endif %}
+        </div>
+    </footer>
+    
+    <!-- Debug toolbar integration point -->
+    {% if config.DEBUG %}
+    <div id="debug-toolbar-mount">
+        <!-- Flask-DebugToolbar will inject content here -->
+    </div>
+    {% endif %}
+</body>
+</html>

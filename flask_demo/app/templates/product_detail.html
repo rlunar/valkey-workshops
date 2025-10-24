@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+
+{% block title %}{{ product.name }} - Flask Caching Demo{% endblock %}
+
+{% block content %}
+<div class="product-detail">
+    <div class="breadcrumb">
+        <a href="{{ url_for('main.index') }}">Home</a> &gt; 
+        <a href="{{ url_for('main.products') }}">Products</a> &gt; 
+        {{ product.name }}
+    </div>
+    
+    <div class="product-header">
+        <h1>{{ product.name }}</h1>
+        <p class="product-price">${{ "%.2f"|format(product.price) }}</p>
+    </div>
+    
+    <div class="product-content">
+        <div class="product-info">
+            <h2>Description</h2>
+            <p>{{ product.description }}</p>
+            
+            <div class="product-meta">
+                <p><strong>Category:</strong> {{ product.category_name }}</p>
+                <p><strong>Product ID:</strong> {{ product.id }}</p>
+                {% if product.created_at %}
+                <p><strong>Added:</strong> {{ product.created_at[:10] }}</p>
+                {% endif %}
+            </div>
+        </div>
+        
+        <div class="cache-info">
+            <h3>Cache Information</h3>
+            <p class="cache-note">
+                <strong>Cached:</strong> This product data is cached for 10 minutes to improve performance.
+                Related products are also cached separately.
+            </p>
+        </div>
+    </div>
+    
+    {% if related_products %}
+    <div class="related-products">
+        <h2>Related Products</h2>
+        <div class="products-grid">
+            {% for related in related_products %}
+            <div class="product-card">
+                <h3><a href="{{ url_for('main.product_detail', product_id=related.id) }}">{{ related.name }}</a></h3>
+                <p class="product-price">${{ "%.2f"|format(related.price) }}</p>
+                <p class="product-description">{{ related.description[:100] }}{% if related.description|length > 100 %}...{% endif %}</p>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+    
+    <div class="actions">
+        <a href="{{ url_for('main.products') }}" class="btn btn-secondary">Back to Products</a>
+    </div>
+</div>
+{% endblock %}
