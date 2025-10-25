@@ -554,75 +554,87 @@ def insert_airports_to_database(df):
             print(f"Processing {len(airports_data)} airports in batches of {batch_size}...")
             
             # Process airports in batches for better transaction handling
-            for batch_start in range(0, len(airports_data), batch_size):
-                batch_end = min(batch_start + batch_size, len(airports_data))
-                batch_data = airports_data[batch_start:batch_end]
-                
-                # Process this batch with transaction handling
-                try:
-                    batch_inserted = 0
-                    batch_skipped = 0
-                    batch_errors = 0
+            with tqdm(
+                total=len(airports_data),
+                desc="🏗️  Inserting airports",
+                unit="airports",
+                colour='blue',
+                bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} ({percentage:3.0f}%) [{elapsed}<{remaining}]'
+            ) as pbar:
+                for batch_start in range(0, len(airports_data), batch_size):
+                    batch_end = min(batch_start + batch_size, len(airports_data))
+                    batch_data = airports_data[batch_start:batch_end]
                     
-                    for airport_data in batch_data:
-                        icao = airport_data['icao']
+                    # Process this batch with transaction handling
+                    try:
+                        batch_inserted = 0
+                        batch_skipped = 0
+                        batch_errors = 0
                         
-                        # Skip if airport already exists
-                        if icao in existing_icao_codes:
-                            batch_skipped += 1
-                            continue
-                        
-                        try:
-                            # Create Airport and AirportGeo records with validation
-                            airport, airport_geo, issues = create_airport_and_geo_records(airport_data, session)
+                        for airport_data in batch_data:
+                            icao = airport_data['icao']
                             
-                            if airport is None:
-                                if error_count < 10:  # Only show first 10 errors
-                                    print(f"✗ Validation failed for {icao}: {', '.join(issues)}")
-                                batch_errors += 1
+                            # Skip if airport already exists
+                            if icao in existing_icao_codes:
+                                batch_skipped += 1
                                 continue
                             
-                            if issues:  # These are warnings
-                                warning_count += len(issues)
-                                if warning_count <= 10:  # Only show first 10 warnings
-                                    print(f"⚠ Warning for {icao}: {', '.join(issues)}")
-                            
-                            # Insert Airport record first
-                            session.add(airport)
-                            session.flush()  # Get the airport_id without committing the transaction
-                            
-                            # Set the foreign key and insert AirportGeo record (if available)
-                            if airport_geo is not None:
-                                airport_geo.airport_id = airport.airport_id
-                                session.add(airport_geo)
-                            
-                            existing_icao_codes.add(icao)  # Track to avoid duplicates in this batch
-                            batch_inserted += 1
-                            
-                        except Exception as e:
-                            if batch_errors < 5:  # Only show first 5 errors per batch
-                                print(f"✗ Error processing {icao}: {e}")
-                            batch_errors += 1
-                            continue
-                    
-                    # Commit the entire batch transaction
-                    session.commit()
-                    
-                    # Update counters
-                    inserted_count += batch_inserted
-                    skipped_count += batch_skipped
-                    error_count += batch_errors
-                    
-                    # Progress reporting
-                    if batch_start % (batch_size * 5) == 0:  # Report every 5 batches
-                        print(f"Processed {batch_end}/{len(airports_data)} airports - Inserted: {inserted_count}, Skipped: {skipped_count}, Errors: {error_count}")
+                            try:
+                                # Create Airport and AirportGeo records with validation
+                                airport, airport_geo, issues = create_airport_and_geo_records(airport_data, session)
+                                
+                                if airport is None:
+                                    if error_count < 10:  # Only show first 10 errors
+                                        print(f"✗ Validation failed for {icao}: {', '.join(issues)}")
+                                    batch_errors += 1
+                                    continue
+                                
+                                if issues:  # These are warnings
+                                    warning_count += len(issues)
+                                    if warning_count <= 10:  # Only show first 10 warnings
+                                        print(f"⚠ Warning for {icao}: {', '.join(issues)}")
+                                
+                                # Insert Airport record first
+                                session.add(airport)
+                                session.flush()  # Get the airport_id without committing the transaction
+                                
+                                # Set the foreign key and insert AirportGeo record (if available)
+                                if airport_geo is not None:
+                                    airport_geo.airport_id = airport.airport_id
+                                    session.add(airport_geo)
+                                
+                                existing_icao_codes.add(icao)  # Track to avoid duplicates in this batch
+                                batch_inserted += 1
+                                
+                            except Exception as e:
+                                if batch_errors < 5:  # Only show first 5 errors per batch
+                                    print(f"✗ Error processing {icao}: {e}")
+                                batch_errors += 1
+                                continue
                         
-                except Exception as e:
-                    # Rollback the entire batch on any error
-                    session.rollback()
-                    print(f"✗ Batch transaction failed (airports {batch_start}-{batch_end}): {e}")
-                    error_count += len(batch_data)
-                    continue
+                        # Commit the entire batch transaction
+                        session.commit()
+                        
+                        # Update counters
+                        inserted_count += batch_inserted
+                        skipped_count += batch_skipped
+                        error_count += batch_errors
+                        
+                        # Update progress bar
+                        pbar.update(len(batch_data))
+                        pbar.set_postfix({
+                            'Inserted': inserted_count,
+                            'Skipped': skipped_count, 
+                            'Errors': error_count
+                        })
+                            
+                    except Exception as e:
+                        # Rollback the entire batch on any error
+                        session.rollback()
+                        print(f"✗ Batch transaction failed (airports {batch_start}-{batch_end}): {e}")
+                        error_count += len(batch_data)
+                        pbar.update(len(batch_data))
+                        continue
             
             print(f"✓ Database insertion completed!")
             print(f"- Inserted: {inserted_count} new airports (with geographic data)")

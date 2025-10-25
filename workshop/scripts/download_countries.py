@@ -260,48 +260,63 @@ def insert_countries_to_database(df):
             
             print(f"Processing {len(countries_data)} countries...")
             
-            for country_data in countries_data:
-                name = country_data['name']
-                iso_code = country_data.get('iso_code')
-                
-                # Skip if country already exists (by name or ISO code)
-                if (name.lower() in existing_names or 
-                    (iso_code and iso_code.upper() in existing_iso_codes)):
-                    skipped_count += 1
-                    continue
-                
-                try:
-                    # Create Country record with validation
-                    country, issues = create_country_record(country_data)
+            # Process countries with progress bar
+            with tqdm(
+                total=len(countries_data),
+                desc="🏗️  Inserting countries",
+                unit="countries",
+                colour='blue',
+                bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} ({percentage:3.0f}%) [{elapsed}<{remaining}]'
+            ) as pbar:
+                for country_data in countries_data:
+                    name = country_data['name']
+                    iso_code = country_data.get('iso_code')
                     
-                    if country is None:
-                        if error_count < 10:  # Only show first 10 errors
-                            print(f"✗ Validation failed for {name}: {', '.join(issues)}")
-                        error_count += 1
+                    # Skip if country already exists (by name or ISO code)
+                    if (name.lower() in existing_names or 
+                        (iso_code and iso_code.upper() in existing_iso_codes)):
+                        skipped_count += 1
                         continue
                     
-                    if issues:  # These are warnings
-                        warning_count += len(issues)
-                        if warning_count <= 10:  # Only show first 10 warnings
-                            print(f"⚠ Warning for {name}: {', '.join(issues)}")
+                    try:
+                        # Create Country record with validation
+                        country, issues = create_country_record(country_data)
+                        
+                        if country is None:
+                            if error_count < 10:  # Only show first 10 errors
+                                print(f"✗ Validation failed for {name}: {', '.join(issues)}")
+                            error_count += 1
+                            continue
+                        
+                        if issues:  # These are warnings
+                            warning_count += len(issues)
+                            if warning_count <= 10:  # Only show first 10 warnings
+                                print(f"⚠ Warning for {name}: {', '.join(issues)}")
+                        
+                        # Insert Country record
+                        session.add(country)
+                        session.commit()
+                        
+                        # Track to avoid duplicates
+                        existing_names.add(name.lower())
+                        if iso_code:
+                            existing_iso_codes.add(iso_code.upper())
+                        
+                        inserted_count += 1
+                        
+                    except Exception as e:
+                        session.rollback()
+                        if error_count < 5:  # Only show first 5 errors
+                            print(f"✗ Error processing {name}: {e}")
+                        error_count += 1
                     
-                    # Insert Country record
-                    session.add(country)
-                    session.commit()
-                    
-                    # Track to avoid duplicates
-                    existing_names.add(name.lower())
-                    if iso_code:
-                        existing_iso_codes.add(iso_code.upper())
-                    
-                    inserted_count += 1
-                    
-                except Exception as e:
-                    session.rollback()
-                    if error_count < 5:  # Only show first 5 errors
-                        print(f"✗ Error processing {name}: {e}")
-                    error_count += 1
-                    continue
+                    # Update progress bar
+                    pbar.update(1)
+                    pbar.set_postfix({
+                        'Inserted': inserted_count,
+                        'Skipped': skipped_count,
+                        'Errors': error_count
+                    })
             
             print(f"✓ Database insertion completed!")
             print(f"- Inserted: {inserted_count} new countries")
