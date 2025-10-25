@@ -6,7 +6,8 @@ is licensed under CC BY 4.0. To view a copy of this license,
 visit https://creativecommons.org/licenses/by/4.0
 """
 
-from .airport import Airport, AirportGeo, AirportReachable
+from .airport import Airport, AirportType
+from .airport_geo import AirportGeo, DSTType
 from .airline import Airline
 from .airplane import Airplane, AirplaneType
 from .flight import Flight, FlightLog, FlightSchedule
@@ -17,8 +18,9 @@ from .weather import WeatherData
 
 __all__ = [
     "Airport",
-    "AirportGeo", 
-    "AirportReachable",
+    "AirportType",
+    "AirportGeo",
+    "DSTType",
     "Airline",
     "Airplane",
     "AirplaneType",

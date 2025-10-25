@@ -35,21 +35,39 @@ uv run python scripts/setup_database.py
 ## Usage
 
 ```python
-from models import Airport, Airline, Flight, Passenger, Booking
+from models import Airport, AirportGeo, Airline, Flight, Passenger, Booking
 from models.database import DatabaseManager
+from sqlmodel import Session, select
 
 # Database connection uses .env configuration automatically
 db_manager = DatabaseManager()
 
-# Use the models
+# Query airport with geographic data (normalized schema)
 with Session(db_manager.engine) as session:
+    # Get airport with location data
+    query = (
+        select(Airport, AirportGeo)
+        .join(AirportGeo, Airport.airport_id == AirportGeo.airport_id)
+        .where(Airport.icao == "LOWW")
+    )
+    
+    result = session.exec(query).first()
+    if result:
+        airport, geo = result
+        print(f"{airport.name} in {geo.city}, {geo.country}")
+    
+    # Query just core airport data (when geographic data not needed)
     airports = session.exec(select(Airport)).all()
+    print(f"Found {len(airports)} airports")
 ```
 
-## Available Models
+## Available Models (Normalized Airport Schema)
 
-- **Airport** - Airport information (IATA/ICAO codes, names)
-- **AirportGeo** - Geographic data for airports
+### Airport Models (Normalized)
+- **Airport** - Core airport operational information (IATA/ICAO codes, names, types)
+- **AirportGeo** - Geographic data for airports (coordinates, city, country, timezone)
+
+### Other Models
 - **Airline** - Airline information with base airports
 - **Airplane** & **AirplaneType** - Aircraft and aircraft types
 - **Flight** & **FlightSchedule** - Flight data and schedules
@@ -57,6 +75,20 @@ with Session(db_manager.engine) as session:
 - **Booking** - Flight bookings
 - **Employee** - Employee data
 - **WeatherData** - Weather station data
+
+### Airport Schema Relationship
+
+The airport data follows database normalization principles with a one-to-one relationship:
+
+```
+Airport (1) ←→ (1) AirportGeo
+```
+
+**Airport Table (Core Data):**
+- airport_id, iata, icao, name, airport_type, data_source, openflights_id
+
+**AirportGeo Table (Geographic Data):**
+- airport_id (FK), city, country, latitude, longitude, altitude, timezone_offset, dst, timezone_name
 
 ## Example
 

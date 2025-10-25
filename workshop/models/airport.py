@@ -1,6 +1,14 @@
 from typing import Optional
-from decimal import Decimal
+from enum import Enum
 from sqlmodel import SQLModel, Field
+
+
+class AirportType(str, Enum):
+    AIRPORT = "airport"
+    HELIPORT = "heliport"
+    SEAPLANE_BASE = "seaplane_base"
+    CLOSED = "closed"
+    BALLOONPORT = "balloonport"
 
 
 class Airport(SQLModel, table=True):
@@ -9,23 +17,8 @@ class Airport(SQLModel, table=True):
     airport_id: Optional[int] = Field(default=None, primary_key=True)
     iata: Optional[str] = Field(max_length=3, index=True)
     icao: str = Field(max_length=4, unique=True)
-    name: str = Field(max_length=50, index=True)
+    name: str = Field(max_length=200, index=True)
+    airport_type: Optional[AirportType] = Field(default=AirportType.AIRPORT)
+    data_source: Optional[str] = Field(max_length=50)
+    openflights_id: Optional[int] = Field(index=True)
 
-
-class AirportGeo(SQLModel, table=True):
-    __tablename__ = "airport_geo"
-    
-    airport_id: int = Field(primary_key=True, foreign_key="airport.airport_id")
-    name: str = Field(max_length=50)
-    city: Optional[str] = Field(max_length=50)
-    country: Optional[str] = Field(max_length=50)
-    latitude: Decimal = Field(max_digits=11, decimal_places=8)
-    longitude: Decimal = Field(max_digits=11, decimal_places=8)
-    # Note: geolocation point field not directly supported in SQLModel
-
-
-class AirportReachable(SQLModel, table=True):
-    __tablename__ = "airport_reachable"
-    
-    airport_id: int = Field(primary_key=True)
-    hops: Optional[int] = None
