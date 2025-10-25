@@ -39,7 +39,7 @@ cp .env.example .env
 bash scripts/setup_workshop.sh
 ```
 
-This imports all available data: countries, airports, airlines, and aircraft types.
+This imports all available data: countries, airports, airlines, aircraft types, and routes.
 
 **Or setup step by step:**
 ```bash
@@ -64,6 +64,7 @@ After importing all data (using `setup_workshop.sh`), you'll also have:
 - **AirportGeo Table**: Geographic data with coordinates, altitude, timezone, and country references
 - **Airline Table**: ~6,100+ airlines with IATA/ICAO codes and operational details
 - **AirplaneType Table**: ~246 aircraft types with IATA/ICAO codes from OpenFlights
+- **Route Table**: ~67,600+ routes between airports operated by airlines with equipment details
 - **Country Integration**: All data properly linked to countries via foreign keys and ISO codes
 
 ## Import Additional Data
@@ -91,6 +92,11 @@ uv run python scripts/download_airlines.py
 uv run python scripts/download_planes.py
 ```
 
+**Routes:**
+```bash
+uv run python scripts/download_routes.py
+```
+
 ### Airport Data Import
 
 This script downloads and imports ~7,700 airports worldwide from OpenFlights.org with:
@@ -113,6 +119,15 @@ The aircraft types import provides:
 - **IATA Codes**: 3-letter aircraft codes (e.g., "738")
 - **ICAO Codes**: 4-letter aircraft codes (e.g., "B738")
 - **Manufacturer Coverage**: Boeing, Airbus, Embraer, and many others
+
+### Routes Data Import
+
+The routes import provides:
+- **Route Information**: ~67,600+ routes between airports worldwide
+- **Airline Operations**: Routes operated by specific airlines with IATA/ICAO codes
+- **Airport Connections**: Source and destination airports with IATA/ICAO codes
+- **Flight Details**: Codeshare status, number of stops, and aircraft equipment used
+- **OpenFlights Integration**: Maintains OpenFlights ID references for airlines and airports
 
 ### What the Airport Import Does
 
@@ -148,6 +163,9 @@ uv run python scripts/airlines_stats.py
 # View aircraft type statistics
 uv run python scripts/planes_stats.py
 
+# View route statistics
+uv run python scripts/routes_stats.py
+
 # Validate all models
 uv run python scripts/validate_models.py
 ```
@@ -175,7 +193,7 @@ with Session(db_manager.engine) as session:
 
 ```python
 from models.database import DatabaseManager
-from models import Airport, AirportGeo, Country, Airline, AirplaneType
+from models import Airport, AirportGeo, Country, Airline, AirplaneType, Route
 from sqlmodel import Session, select
 
 db_manager = DatabaseManager()
@@ -195,6 +213,18 @@ with Session(db_manager.engine) as session:
         print(f"  Location: {geo.city}, {country.name}")
         print(f"  Coordinates: {geo.latitude}, {geo.longitude}")
     
+    # Find routes from JFK airport
+    jfk_routes = session.exec(
+        select(Route)
+        .where(Route.source_airport_code == "JFK")
+        .limit(5)
+    ).all()
+    
+    for route in jfk_routes:
+        codeshare = " (Codeshare)" if route.codeshare else ""
+        equipment = f" [{route.equipment}]" if route.equipment else ""
+        print(f"{route.airline_code}: JFK → {route.destination_airport_code}{codeshare}{equipment}")
+    
     # Find Boeing aircraft types
     boeing_aircraft = session.exec(
         select(AirplaneType)
@@ -212,12 +242,13 @@ with Session(db_manager.engine) as session:
 - **Airports**: OpenFlights.org airport database (~7,700 airports worldwide)
 - **Airlines**: OpenFlights.org airline database (~6,100+ airlines)
 - **Aircraft Types**: OpenFlights.org planes database (~246 aircraft types)
+- **Routes**: OpenFlights.org routes database (~67,600+ routes between airports)
 - **ISO Codes**: Complete ISO 3166-1 alpha-2 and alpha-3 country code mappings
 
 ## Project Structure
 
 ```
-├── models/           # SQLModel classes (Airport, AirportGeo, Country, Airline, AirplaneType)
+├── models/           # SQLModel classes (Airport, AirportGeo, Country, Airline, AirplaneType, Route)
 ├── scripts/          # Database setup and import scripts
 │   ├── setup_workshop.sh      # Complete setup script (all data)
 │   ├── reset_database.py      # Create fresh database tables
@@ -225,7 +256,9 @@ with Session(db_manager.engine) as session:
 │   ├── download_airports.py   # Import airport data with country matching
 │   ├── download_airlines.py   # Import airline data
 │   ├── download_planes.py     # Import aircraft type data
+│   ├── download_routes.py     # Import route data
 │   ├── *_stats.py            # Statistics scripts for each data type
+│   ├── route_example.py       # Route usage examples
 │   └── validate_models.py     # Model validation
 ├── utils/            # ISO country code mappings and utilities
 ├── docs/             # Database setup files and documentation

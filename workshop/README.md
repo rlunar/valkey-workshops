@@ -72,6 +72,7 @@ The implementation includes the following models:
 - **Country** - Country information with ISO and DAFIF codes for airport lookups
 - **Airline** - Airline information with base airport relationships
 - **Airplane** & **AirplaneType** - Aircraft fleet and specifications
+- **Route** - Flight routes between airports operated by airlines with equipment details
 
 #### Flight Operations
 - **Flight** - Individual flight instances with schedules and routes
@@ -186,9 +187,13 @@ sudo -u postgres pgcli < docs/postgresql_database.sql
    # Download and import countries data (interactive)
    uv run python scripts/download_countries.py
    
+   # Download and import routes data (interactive)
+   uv run python scripts/download_routes.py
+   
    # View statistics about the imported data
    uv run python scripts/airports_stats.py
    uv run python scripts/countries_stats.py
+   uv run python scripts/routes_stats.py
    ```
 
 ## Migration from Single Airport Table
@@ -360,6 +365,46 @@ def get_flights_with_airport_details(session: Session):
     for flight, airline, airport, geo in results:
         print(f"{airline.name} flight {flight.flightno}")
         print(f"From: {airport.name} ({airport.iata}) in {geo.city}, {geo.country}")
+
+### Route Analysis and Planning
+
+```python
+from models import Route
+
+# Find all routes from a specific airport
+def get_routes_from_airport(session: Session, airport_code: str):
+    query = (
+        select(Route)
+        .where(Route.source_airport_code == airport_code)
+        .order_by(Route.airline_code)
+    )
+    return session.exec(query).all()
+
+# Find routes between two airports
+def get_routes_between_airports(session: Session, source: str, destination: str):
+    query = (
+        select(Route)
+        .where(Route.source_airport_code == source)
+        .where(Route.destination_airport_code == destination)
+    )
+    return session.exec(query).all()
+
+# Analyze codeshare routes
+def get_codeshare_routes(session: Session, airline_code: str):
+    query = (
+        select(Route)
+        .where(Route.airline_code == airline_code)
+        .where(Route.codeshare == True)
+    )
+    return session.exec(query).all()
+
+# Find routes by aircraft equipment
+def get_routes_by_aircraft(session: Session, aircraft_type: str):
+    query = (
+        select(Route)
+        .where(Route.equipment.contains(aircraft_type))
+    )
+    return session.exec(query).all()
 ```
 
 ## Configuration
@@ -448,6 +493,30 @@ This will:
 - Supports country lookups for airport geographic data
 - Processes ~260 countries and territories
 
+### Download and Import Routes
+
+```bash
+# Download and import routes data (interactive)
+uv run python scripts/download_routes.py
+
+# View statistics about the imported data
+uv run python scripts/routes_stats.py
+```
+
+This will:
+1. Download the latest routes.dat from OpenFlights.org (~67,600+ routes)
+2. Analyze route data structure and validate connections
+3. Import routes with airline and airport references
+4. Enable route analysis and flight planning queries
+
+**Route Data Processing:**
+- Imports airline codes (IATA/ICAO) and OpenFlights airline IDs
+- Processes source and destination airport codes (IATA/ICAO) with OpenFlights airport IDs
+- Handles codeshare flight indicators and stop information
+- Includes aircraft equipment details for route planning
+- Validates route connectivity and data integrity
+- Processes ~67,600+ routes between 3,300+ airports on 548+ airlines
+
 ## Project Structure
 
 ```
@@ -462,6 +531,7 @@ This will:
 │   ├── country.py                   # Country model with ISO/DAFIF codes
 │   ├── airline.py                   # Airline model
 │   ├── airplane.py                  # Aircraft models
+│   ├── route.py                     # Route model for airline routes
 │   ├── flight.py                    # Flight operation models
 │   ├── passenger.py                 # Passenger models
 │   ├── booking.py                   # Booking model
@@ -473,8 +543,11 @@ This will:
 │   ├── setup_database.py            # Database initialization
 │   ├── download_airports.py         # Download and import airport data
 │   ├── download_countries.py        # Download and import country data
+│   ├── download_routes.py           # Download and import route data
 │   ├── airports_stats.py            # View airport data statistics
 │   ├── countries_stats.py           # View country data statistics
+│   ├── routes_stats.py              # View route data statistics
+│   ├── route_example.py             # Route usage examples
 │   ├── reset_database.py            # Reset database schema
 │   ├── migrate_airport_schema.py    # Migration utility for existing databases
 │   └── validate_models.py           # Model validation

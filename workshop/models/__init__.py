@@ -17,6 +17,7 @@ from .passenger import Passenger, PassengerDetails
 from .booking import Booking
 from .employee import Employee
 from .weather import WeatherData
+from .route import Route
 
 __all__ = [
     "Airport",
@@ -35,4 +36,5 @@ __all__ = [
     "Booking",
     "Employee",
     "WeatherData",
+    "Route",
 ]
