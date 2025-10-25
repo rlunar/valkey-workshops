@@ -13,10 +13,12 @@ from .enums import (
     WeatherCondition,
 )
 
-# Core flight and passenger models
+# Airport and airline models
+from .airport import AirportModel
+from .airline import AirlineModel
+
+# Flight models
 from .flight import (
-    AirportModel,
-    AirlineModel,
     FlightScheduleModel,
     FlightStatusModel,
     FlightModel,

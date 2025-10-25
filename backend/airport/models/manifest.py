@@ -9,7 +9,8 @@ from datetime import datetime, date
 from typing import List, Dict, Optional, Any
 from pydantic import BaseModel, Field, ConfigDict
 
-from .flight import FlightModel, AirportModel
+from .flight import FlightModel
+from .airport import AirportModel
 from .passenger import PassengerModel, BookingModel
 
 

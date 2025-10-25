@@ -10,26 +10,8 @@ from typing import Optional
 from pydantic import BaseModel, Field, ConfigDict
 
 from .enums import FlightStatus
-
-
-class AirportModel(BaseModel):
-    """Airport information model."""
-    model_config = ConfigDict(from_attributes=True)
-    
-    airport_id: int
-    iata: Optional[str] = Field(None, max_length=3, description="IATA airport code")
-    icao: str = Field(..., max_length=4, description="ICAO airport code")
-    name: str = Field(..., max_length=50, description="Airport name")
-
-
-class AirlineModel(BaseModel):
-    """Airline information model."""
-    model_config = ConfigDict(from_attributes=True)
-    
-    airline_id: int
-    iata: str = Field(..., max_length=2, description="IATA airline code")
-    airlinename: Optional[str] = Field(None, max_length=30, description="Airline name")
-    base_airport: int = Field(..., description="Base airport ID")
+from .airport import AirportModel
+from .airline import AirlineModel
 
 
 class FlightScheduleModel(BaseModel):
