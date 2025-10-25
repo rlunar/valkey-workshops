@@ -218,6 +218,7 @@ class TestRunner:
         # Categorize results
         database_tests = [k for k in self.results.keys() if "database" in k]
         cache_tests = [k for k in self.results.keys() if "cache" in k or "seat_reservation" in k]
+        leaderboard_tests = [k for k in self.results.keys() if "leaderboard" in k]
         integration_tests = [k for k in self.results.keys() if "integration" in k or "query_optimizer" in k]
         
         def print_category(tests: List[str], category: str):
@@ -236,6 +237,7 @@ class TestRunner:
         
         print_category(database_tests, "Database")
         print_category(cache_tests, "Cache")
+        print_category(leaderboard_tests, "Leaderboard")
         print_category(integration_tests, "Integration")
         
         # Overall statistics
@@ -293,6 +295,17 @@ class TestRunner:
         
         cache_tests_passed = self.run_pytest_tests(cache_test_files, "Cache")
         
+        # 3.5. Leaderboard tests
+        print("\n🏆 PHASE 3.5: Leaderboard System Tests")
+        print("=" * 40)
+        
+        leaderboard_test_files = [
+            "tests/test_leaderboard_system.py"
+            # Note: Skipping test_leaderboard_integration.py (requires live Valkey connection)
+        ]
+        
+        leaderboard_tests_passed = self.run_pytest_tests(leaderboard_test_files, "Leaderboard")
+        
         # 4. Query Optimizer Integration Tests
         print("\n🔍 PHASE 4: Query Optimizer Integration")
         print("=" * 40)
@@ -348,7 +361,7 @@ class TestRunner:
         self.print_summary()
         
         # Determine exit code
-        all_passed = db_tests_passed and cache_tests_passed and query_optimizer_passed and cache_demo_passed
+        all_passed = db_tests_passed and cache_tests_passed and leaderboard_tests_passed and query_optimizer_passed and cache_demo_passed
         return 0 if all_passed else 1
 
 
