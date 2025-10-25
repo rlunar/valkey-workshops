@@ -218,6 +218,7 @@ class TestRunner:
         # Categorize results
         database_tests = [k for k in self.results.keys() if "database" in k]
         cache_tests = [k for k in self.results.keys() if "cache" in k]
+        integration_tests = [k for k in self.results.keys() if "integration" in k or "query_optimizer" in k]
         
         def print_category(tests: List[str], category: str):
             if tests:
@@ -235,6 +236,7 @@ class TestRunner:
         
         print_category(database_tests, "Database")
         print_category(cache_tests, "Cache")
+        print_category(integration_tests, "Integration")
         
         # Overall statistics
         total_tests = len(self.results)
@@ -290,8 +292,49 @@ class TestRunner:
         
         cache_tests_passed = self.run_pytest_tests(cache_test_files, "Cache")
         
-        # 4. Cache demo (async)
-        print("\n🎭 PHASE 4: Live Demonstrations")
+        # 4. Query Optimizer Integration Tests
+        print("\n🔍 PHASE 4: Query Optimizer Integration")
+        print("=" * 40)
+        
+        query_optimizer_test_files = [
+            "tests/test_query_optimizer_integration.py"
+        ]
+        
+        # Run as async integration test
+        try:
+            print("Running QueryOptimizer integration test...")
+            result = subprocess.run(
+                ["uv", "run", "python", "tests/test_query_optimizer_integration.py"],
+                cwd=self.backend_dir,
+                capture_output=True,
+                text=True,
+                timeout=180  # 3 minutes timeout for integration test
+            )
+            
+            if result.returncode == 0:
+                print("✅ QueryOptimizer integration test passed")
+                self.results["test_query_optimizer_integration.py"] = "PASSED"
+                query_optimizer_passed = True
+            else:
+                print("❌ QueryOptimizer integration test failed")
+                if result.stdout:
+                    print("STDOUT:", result.stdout[-500:])  # Last 500 chars
+                if result.stderr:
+                    print("STDERR:", result.stderr[-500:])
+                self.results["test_query_optimizer_integration.py"] = "FAILED"
+                query_optimizer_passed = False
+                
+        except subprocess.TimeoutExpired:
+            print("⏰ QueryOptimizer integration test timed out")
+            self.results["test_query_optimizer_integration.py"] = "TIMEOUT"
+            query_optimizer_passed = False
+        except Exception as e:
+            print(f"💥 QueryOptimizer integration test error: {e}")
+            self.results["test_query_optimizer_integration.py"] = "ERROR"
+            query_optimizer_passed = False
+
+        # 5. Cache demo (async)
+        print("\n🎭 PHASE 5: Live Demonstrations")
         print("=" * 35)
         
         try:
@@ -300,11 +343,11 @@ class TestRunner:
             print(f"❌ Cache demo failed: {e}")
             cache_demo_passed = False
         
-        # 5. Summary
+        # 6. Summary
         self.print_summary()
         
         # Determine exit code
-        all_passed = db_tests_passed and cache_tests_passed and cache_demo_passed
+        all_passed = db_tests_passed and cache_tests_passed and query_optimizer_passed and cache_demo_passed
         return 0 if all_passed else 1
 
 
