@@ -358,7 +358,7 @@ def get_flights_with_airport_details(session: Session):
     
     results = session.exec(query).all()
     for flight, airline, airport, geo in results:
-        print(f"{airline.airlinename} flight {flight.flightno}")
+        print(f"{airline.name} flight {flight.flightno}")
         print(f"From: {airport.name} ({airport.iata}) in {geo.city}, {geo.country}")
 ```
 

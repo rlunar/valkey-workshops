@@ -79,7 +79,7 @@ def validate_models():
             (Airport, ['airport_id', 'iata', 'icao', 'name', 'airport_type', 'data_source', 'openflights_id']),
             (AirportGeo, ['airport_id', 'city', 'country', 'latitude', 'longitude', 'altitude', 'timezone_offset', 'dst', 'timezone_name']),
             # Other models
-            (Airline, ['airline_id', 'iata', 'airlinename', 'base_airport']),
+            (Airline, ['airline_id', 'name', 'iata', 'icao', 'active']),
             (Flight, ['flight_id', 'flightno', 'from_airport', 'to_airport']),
             (Passenger, ['passenger_id', 'passportno', 'firstname', 'lastname']),
             (Booking, ['booking_id', 'flight_id', 'passenger_id', 'price'])

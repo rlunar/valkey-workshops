@@ -86,7 +86,7 @@ def example_queries():
         # Get airline information
         airlines = session.exec(select(Airline)).all()
         for airline in airlines[:5]:  # First 5 airlines
-            print(f"Airline: {airline.airlinename} ({airline.iata})")
+            print(f"Airline: {airline.name} ({airline.iata if airline.iata else 'N/A'})")
         
         # Complex query: Get bookings with passenger and flight info
         bookings_query = (
