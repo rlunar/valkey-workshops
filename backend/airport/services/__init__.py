@@ -7,6 +7,7 @@ seat reservations, leaderboards, and other workshop functionality.
 
 from .query_optimizer import QueryOptimizer, FlightSearchCriteria, QueryPerformanceMetrics
 from .lock_manager import DistributedLockManager, LockInfo, StampedePreventionMetrics
+from .ttl_optimizer import TTLOptimizer, TTLDistributionStats, create_ttl_optimizer
 
 __all__ = [
     'QueryOptimizer',
@@ -14,5 +15,8 @@ __all__ = [
     'QueryPerformanceMetrics',
     'DistributedLockManager',
     'LockInfo',
-    'StampedePreventionMetrics'
+    'StampedePreventionMetrics',
+    'TTLOptimizer',
+    'TTLDistributionStats',
+    'create_ttl_optimizer'
 ]
