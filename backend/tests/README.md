@@ -1,20 +1,55 @@
-# Database Tests for Valkey Airport Workshop
+# Tests for Valkey Airport Workshop
 
-This directory contains comprehensive tests for the database layer of the Valkey caching workshop system. The tests validate SQLAlchemy models, database configuration, and integration functionality.
+This directory contains comprehensive tests for both the database and cache systems of the Valkey caching workshop. The tests validate SQLAlchemy models, database configuration, cache operations, and integration functionality.
+
+## 🚀 Quick Start
+
+### Run All Tests (Recommended)
+
+```bash
+uv run python tests/run_tests.py
+```
+
+This comprehensive test runner validates both database and cache systems with live demonstrations.
+
+### Individual System Tests
+
+```bash
+# Database tests only
+uv run python tests/run_database_tests.py
+
+# Cache tests only  
+uv run pytest tests/test_cache_simple.py -v
+
+# Cache demo
+uv run python tests/test_cache_demo.py
+```
 
 ## Test Structure
 
-### Core Test Files
+### 🏃‍♂️ Test Runners
+
+- **`run_tests.py`** - **Comprehensive test runner for database + cache systems** ⭐
+- **`run_database_tests.py`** - Database-only test runner
+- **`TEST_RUNNER_GUIDE.md`** - Detailed guide for using the test runners
+
+### 🗄️ Database Test Files
 
 - **`test_database_simple.py`** - Essential database functionality tests (recommended for CI/CD)
 - **`test_database_models.py`** - Comprehensive model validation and relationship tests
 - **`test_database_config.py`** - Database configuration and connection management tests
 - **`test_database_integration.py`** - End-to-end integration tests with complex scenarios
 
-### Utility Files
+### 💾 Cache Test Files
 
-- **`run_database_tests.py`** - Test runner script with validation and reporting
+- **`test_cache_simple.py`** - Core cache functionality tests (32 tests) ⭐
+- **`test_cache_integration.py`** - Advanced async cache tests (requires pytest-asyncio)
+- **`test_cache_demo.py`** - Interactive cache system demonstration
+
+### 📚 Documentation
+
 - **`README.md`** - This documentation file
+- **`CACHE_INTEGRATION_SUMMARY.md`** - Detailed cache implementation summary
 
 ## Running Tests
 
