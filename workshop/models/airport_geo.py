@@ -21,7 +21,8 @@ class AirportGeo(SQLModel, table=True):
     
     airport_id: int = Field(primary_key=True, foreign_key="airport.airport_id")
     city: Optional[str] = Field(default=None, max_length=100)
-    country: Optional[str] = Field(default=None, max_length=100)
+    country_id: int = Field(foreign_key="country.country_id", index=True)
+    iso_a3: Optional[str] = Field(default=None, max_length=3, index=True)
     latitude: Optional[Decimal] = Field(default=None, max_digits=11, decimal_places=8)
     longitude: Optional[Decimal] = Field(default=None, max_digits=11, decimal_places=8)
     altitude: Optional[int] = Field(default=None)

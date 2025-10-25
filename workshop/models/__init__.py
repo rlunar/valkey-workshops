@@ -9,6 +9,7 @@ visit https://creativecommons.org/licenses/by/4.0
 from .airport import Airport, AirportType
 from .airport_geo import AirportGeo, DSTType
 from .airline import Airline
+from .country import Country
 from .airplane import Airplane, AirplaneType
 from .flight import Flight, FlightLog, FlightSchedule
 from .passenger import Passenger, PassengerDetails
@@ -24,6 +25,7 @@ __all__ = [
     "Airline",
     "Airplane",
     "AirplaneType",
+    "Country",
     "Flight",
     "FlightLog",
     "FlightSchedule",

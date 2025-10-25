@@ -13,7 +13,7 @@ try:
     import polars as pl
     from sqlmodel import Session, select
     from models.database import DatabaseManager
-    from models import Airport, AirportGeo
+    from models import Airport, AirportGeo, Country
     from models.airport import AirportType
     from models.airport_geo import DSTType
     from dotenv import load_dotenv
@@ -391,7 +391,7 @@ def prepare_airport_data(df):
     
     return prepared_df
 
-def create_airport_and_geo_records(airport_data):
+def create_airport_and_geo_records(airport_data, session):
     """Create Airport and AirportGeo records from airport data with comprehensive validation"""
     # Validate core airport data first
     core_errors = validate_core_airport_data(airport_data)
@@ -414,19 +414,37 @@ def create_airport_and_geo_records(airport_data):
             openflights_id=int(airport_data['openflights_id']) if airport_data.get('openflights_id') is not None else None
         )
         
-        # Create AirportGeo record (geographic data only)
-        # Note: airport_id will be set after airport is saved
-        airport_geo = AirportGeo(
-            airport_id=None,  # Will be set after airport is saved
-            city=airport_data.get('city') if airport_data.get('city') else None,
-            country=airport_data.get('country') if airport_data.get('country') else None,
-            latitude=Decimal(str(airport_data['latitude'])) if airport_data.get('latitude') is not None else None,
-            longitude=Decimal(str(airport_data['longitude'])) if airport_data.get('longitude') is not None else None,
-            altitude=int(airport_data['altitude']) if airport_data.get('altitude') is not None else None,
-            timezone_offset=Decimal(str(airport_data['timezone_offset'])) if airport_data.get('timezone_offset') is not None else None,
-            dst=DSTType(airport_data['dst']) if airport_data.get('dst') and airport_data['dst'] in [e.value for e in DSTType] else None,
-            timezone_name=airport_data.get('timezone_name') if airport_data.get('timezone_name') else None
-        )
+        # Look up country ID and ISO A3 code - now required for AirportGeo
+        country_id = None
+        country_iso_a3 = None
+        country_name = airport_data.get('country')
+        if country_name:
+            from models.country import Country
+            country = session.exec(select(Country).where(Country.name == country_name)).first()
+            if country:
+                country_id = country.country_id
+                country_iso_a3 = country.iso_a3
+            else:
+                # Country not found - this will prevent AirportGeo creation
+                geo_warnings.append(f"Country '{country_name}' not found in database - skipping geographic data")
+        else:
+            geo_warnings.append("No country specified - skipping geographic data")
+        
+        # Create AirportGeo record only if we have a valid country_id (now required)
+        airport_geo = None
+        if country_id is not None:
+            airport_geo = AirportGeo(
+                airport_id=None,  # Will be set after airport is saved
+                city=airport_data.get('city') if airport_data.get('city') else None,
+                country_id=country_id,
+                iso_a3=country_iso_a3,
+                latitude=Decimal(str(airport_data['latitude'])) if airport_data.get('latitude') is not None else None,
+                longitude=Decimal(str(airport_data['longitude'])) if airport_data.get('longitude') is not None else None,
+                altitude=int(airport_data['altitude']) if airport_data.get('altitude') is not None else None,
+                timezone_offset=Decimal(str(airport_data['timezone_offset'])) if airport_data.get('timezone_offset') is not None else None,
+                dst=DSTType(airport_data['dst']) if airport_data.get('dst') and airport_data['dst'] in [e.value for e in DSTType] else None,
+                timezone_name=airport_data.get('timezone_name') if airport_data.get('timezone_name') else None
+            )
         
         return airport, airport_geo, geo_warnings
         
@@ -485,7 +503,7 @@ def insert_airports_to_database(df):
                         
                         try:
                             # Create Airport and AirportGeo records with validation
-                            airport, airport_geo, issues = create_airport_and_geo_records(airport_data)
+                            airport, airport_geo, issues = create_airport_and_geo_records(airport_data, session)
                             
                             if airport is None:
                                 if error_count < 10:  # Only show first 10 errors
@@ -502,9 +520,10 @@ def insert_airports_to_database(df):
                             session.add(airport)
                             session.flush()  # Get the airport_id without committing the transaction
                             
-                            # Set the foreign key and insert AirportGeo record
-                            airport_geo.airport_id = airport.airport_id
-                            session.add(airport_geo)
+                            # Set the foreign key and insert AirportGeo record (if available)
+                            if airport_geo is not None:
+                                airport_geo.airport_id = airport.airport_id
+                                session.add(airport_geo)
                             
                             existing_icao_codes.add(icao)  # Track to avoid duplicates in this batch
                             batch_inserted += 1
@@ -605,7 +624,7 @@ def show_database_stats():
             with_coordinates = len([g for g in total_geo if g.latitude and g.longitude])
             with_altitude = len([g for g in total_geo if g.altitude])
             with_timezone = len([g for g in total_geo if g.timezone_name])
-            with_city_country = len([g for g in total_geo if g.city and g.country])
+            with_city_country = len([g for g in total_geo if g.city and g.country_id])
             
             print(f"📊 Normalized Database Statistics:")
             print(f"  Total airports: {total:,}")
@@ -616,18 +635,20 @@ def show_database_stats():
             print(f"  With timezone data: {with_timezone:,}")
             print(f"  With city/country: {with_city_country:,}")
             
-            # Show sample airports with geographic data
+            # Show sample airports with geographic data and country information
             sample_query = (
-                select(Airport, AirportGeo)
+                select(Airport, AirportGeo, Country)
                 .join(AirportGeo, Airport.airport_id == AirportGeo.airport_id)
+                .outerjoin(Country, AirportGeo.country_id == Country.country_id)
                 .limit(3)
             )
             sample_results = session.exec(sample_query).all()
             
             print(f"\nSample airports with geographic data:")
-            for airport, geo in sample_results:
+            for airport, geo, country in sample_results:
                 iata_display = f"({airport.iata})" if airport.iata else "(no IATA)"
-                location = f"{geo.city}, {geo.country}" if geo.city and geo.country else "Location unknown"
+                country_name = country.name if country else "Unknown"
+                location = f"{geo.city}, {country_name}" if geo.city else f"{country_name}"
                 coords = f"({geo.latitude}, {geo.longitude})" if geo.latitude and geo.longitude else "(no coords)"
                 print(f"  {airport.icao} {iata_display} - {airport.name}")
                 print(f"    Location: {location} {coords}")

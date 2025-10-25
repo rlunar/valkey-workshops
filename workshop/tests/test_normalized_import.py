@@ -36,7 +36,7 @@ def test_normalized_import():
             'data_source': 'Test',
             'openflights_id': 99999,
             'city': 'Test City',
-            'country': 'Test Country',
+            'country': 'United States',  # Use a real country
             'latitude': 40.0,
             'longitude': -74.0,
             'altitude': 100,
@@ -52,7 +52,7 @@ def test_normalized_import():
             'data_source': 'Test',
             'openflights_id': 99998,
             'city': 'Test City 2',
-            'country': 'Test Country',
+            'country': 'United States',  # Use a real country
             'latitude': 41.0,
             'longitude': -75.0,
             'altitude': None,  # Test without altitude
@@ -117,8 +117,9 @@ def test_normalized_import():
                     session.add(airport)
                     session.flush()  # Get airport_id
                     
-                    airport_geo.airport_id = airport.airport_id
-                    session.add(airport_geo)
+                    if airport_geo is not None:
+                        airport_geo.airport_id = airport.airport_id
+                        session.add(airport_geo)
                     session.commit()
                     
                     print(f"  ✓ Inserted airport {icao} with ID {airport.airport_id}")
@@ -133,7 +134,10 @@ def test_normalized_import():
                     
                     if result:
                         retrieved_airport, retrieved_geo = result
-                        print(f"  ✓ Verified: {retrieved_airport.name} at {retrieved_geo.city}, {retrieved_geo.country}")
+                        country_info = f"country_id={retrieved_geo.country_id}"
+                        if retrieved_geo.iso_a3:
+                            country_info += f" ({retrieved_geo.iso_a3})"
+                        print(f"  ✓ Verified: {retrieved_airport.name} at {retrieved_geo.city}, {country_info}")
                     else:
                         print(f"  ✗ Failed to retrieve inserted data")
                         
@@ -152,8 +156,11 @@ def test_normalized_import():
             for airport, geo in test_results:
                 iata_display = f"({airport.iata})" if airport.iata else "(no IATA)"
                 coords = f"({geo.latitude}, {geo.longitude})" if geo.latitude and geo.longitude else "(no coords)"
+                country_info = f"country_id={geo.country_id}"
+                if geo.iso_a3:
+                    country_info += f" ({geo.iso_a3})"
                 print(f"  {airport.icao} {iata_display} - {airport.name}")
-                print(f"    Location: {geo.city}, {geo.country} {coords}")
+                print(f"    Location: {geo.city}, {country_info} {coords}")
             
             # Clean up test data - delete AirportGeo first due to foreign key constraints
             test_airports_to_delete = session.exec(select(Airport).where(Airport.icao.in_(['TEST', 'TST2']))).all()

@@ -69,6 +69,7 @@ The implementation includes the following models:
 #### Core Aviation Data
 - **Airport** - Core airport operational information (IATA/ICAO codes, names, types)
 - **AirportGeo** - Geographic data for airports (coordinates, city, country, timezone)
+- **Country** - Country information with ISO and DAFIF codes for airport lookups
 - **Airline** - Airline information with base airport relationships
 - **Airplane** & **AirplaneType** - Aircraft fleet and specifications
 
@@ -177,13 +178,17 @@ sudo -u postgres pgcli < docs/postgresql_database.sql
    uv run python scripts/database_example.py
    ```
 
-6. **Import real airport data (optional):**
+6. **Import real data (optional):**
    ```bash
    # Download and import airports data (interactive)
    uv run python scripts/download_airports.py
    
+   # Download and import countries data (interactive)
+   uv run python scripts/download_countries.py
+   
    # View statistics about the imported data
    uv run python scripts/airports_stats.py
+   uv run python scripts/countries_stats.py
    ```
 
 ## Migration from Single Airport Table
@@ -386,9 +391,9 @@ DB_PASSWORD=your_password
 | MariaDB | pymysql | `mysql+pymysql://user:pass@host:port/db` |
 | PostgreSQL | psycopg2 | `postgresql+psycopg2://user:pass@host:port/db` |
 
-## Airport Data Import
+## Real Data Import
 
-The project includes a script to download and import real airport data from OpenFlights.org into the normalized schema:
+The project includes scripts to download and import real aviation data from OpenFlights.org:
 
 ### Download and Import Airports
 
@@ -407,7 +412,7 @@ This will:
 4. Insert new airports into both `airport` and `airport_geo` tables
 5. Maintain referential integrity between the tables
 
-**Data Processing:**
+**Airport Data Processing:**
 - Imports all 14 fields from OpenFlights data
 - Splits data between Airport (operational) and AirportGeo (geographic) tables
 - Filters for commercial airports only (excludes heliports, seaplane bases)
@@ -420,6 +425,29 @@ This will:
 - Airport type classification and data source tracking
 - Processes ~7,700 airports from 237 countries
 
+### Download and Import Countries
+
+```bash
+# Download and import countries data (interactive)
+uv run python scripts/download_countries.py
+
+# View statistics about the imported data
+uv run python scripts/countries_stats.py
+```
+
+This will:
+1. Download the latest countries.dat from OpenFlights.org (~260 countries)
+2. Analyze country codes and names
+3. Import countries with ISO 3166-1 and DAFIF codes
+4. Enable country lookups for airport data
+
+**Country Data Processing:**
+- Imports country names, ISO codes, and DAFIF codes
+- Validates ISO 3166-1 two-letter country codes
+- Handles historical DAFIF codes for aviation purposes
+- Supports country lookups for airport geographic data
+- Processes ~260 countries and territories
+
 ## Project Structure
 
 ```
@@ -431,6 +459,7 @@ This will:
 │   ├── database.py                  # Database connection management
 │   ├── airport.py                   # Airport core operational model
 │   ├── airport_geo.py               # Airport geographic data model
+│   ├── country.py                   # Country model with ISO/DAFIF codes
 │   ├── airline.py                   # Airline model
 │   ├── airplane.py                  # Aircraft models
 │   ├── flight.py                    # Flight operation models
@@ -443,7 +472,9 @@ This will:
 │   ├── database_example.py          # Usage examples and testing
 │   ├── setup_database.py            # Database initialization
 │   ├── download_airports.py         # Download and import airport data
+│   ├── download_countries.py        # Download and import country data
 │   ├── airports_stats.py            # View airport data statistics
+│   ├── countries_stats.py           # View country data statistics
 │   ├── reset_database.py            # Reset database schema
 │   ├── migrate_airport_schema.py    # Migration utility for existing databases
 │   └── validate_models.py           # Model validation
