@@ -52,7 +52,7 @@ from .simulation import (
     LoadTestConfigModel,
 )
 
-# Russian doll cache and manifest models
+# Nested doll cache and manifest models
 from .manifest import (
     PassengerManifestEntryModel,
     FlightManifestModel,

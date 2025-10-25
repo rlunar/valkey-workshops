@@ -217,7 +217,7 @@ class TestRunner:
         
         # Categorize results
         database_tests = [k for k in self.results.keys() if "database" in k]
-        cache_tests = [k for k in self.results.keys() if "cache" in k or "seat_reservation" in k]
+        cache_tests = [k for k in self.results.keys() if "cache" in k or "seat_reservation" in k or "nested_doll" in k]
         leaderboard_tests = [k for k in self.results.keys() if "leaderboard" in k]
         integration_tests = [k for k in self.results.keys() if "integration" in k or "query_optimizer" in k]
         
@@ -290,7 +290,8 @@ class TestRunner:
         
         cache_test_files = [
             "tests/test_cache_simple.py",
-            "tests/test_seat_reservation_integration.py"
+            "tests/test_seat_reservation_integration.py",
+            "tests/test_nested_doll_cache.py"
         ]
         
         cache_tests_passed = self.run_pytest_tests(cache_test_files, "Cache")

@@ -147,7 +147,7 @@ class CacheInvalidationStrategyModel(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     
     strategy_name: str = Field(..., description="Strategy identifier")
-    cache_pattern: str = Field(..., description="Cache pattern (russian_doll, write_behind, etc.)")
+    cache_pattern: str = Field(..., description="Cache pattern (nested_doll, write_behind, etc.)")
     invalidation_rules: List[Dict[str, Any]] = Field(
         default_factory=list, 
         description="Invalidation rules configuration"

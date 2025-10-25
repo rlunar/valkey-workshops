@@ -1,8 +1,8 @@
 """
-Passenger manifest and Russian doll cache models for the airport workshop application.
+Passenger manifest and nested doll cache models for the airport workshop application.
 
 This module contains models for flight manifests, passenger entries, and nested
-cache structures used in the Russian doll caching demonstration.
+cache structures used in the nested doll caching demonstration.
 """
 
 from datetime import datetime, date
@@ -40,7 +40,7 @@ class FlightManifestModel(BaseModel):
     Complete passenger manifest for a flight.
     
     Represents the full passenger list for a flight with
-    seat assignments and manifest statistics for Russian
+    seat assignments and manifest statistics for nested
     doll caching demonstrations.
     """
     model_config = ConfigDict(from_attributes=True)
@@ -65,7 +65,7 @@ class AirportDailyFlightsModel(BaseModel):
     """
     Nested cache structure for airport daily flights.
     
-    Represents the top-level Russian doll cache structure
+    Represents the top-level nested doll cache structure
     containing airport information and all flights for a specific day.
     """
     model_config = ConfigDict(from_attributes=True)
@@ -86,7 +86,7 @@ class AirportDailyFlightsModel(BaseModel):
 
 class NestedFlightDataModel(BaseModel):
     """
-    Nested flight data structure for Russian doll caching.
+    Nested flight data structure for nested doll caching.
     
     Combines flight schedule, status, and manifest data
     in a hierarchical structure for cache dependency demonstrations.
