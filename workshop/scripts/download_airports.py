@@ -391,6 +391,80 @@ def prepare_airport_data(df):
     
     return prepared_df
 
+def find_country_by_name(country_name, session):
+    """Find country in database by name with fuzzy matching and ISO code fallback"""
+    from models.country import Country
+    from utils.iso_country_codes import get_iso_a3_from_iso_a2, validate_iso_a3, validate_iso_a2
+    
+    if not country_name:
+        return None, None
+    
+    country_name = country_name.strip()
+    
+    # First try exact name match
+    country = session.exec(select(Country).where(Country.name == country_name)).first()
+    if country:
+        return country.country_id, country.iso_a3
+    
+    # Try case-insensitive match
+    country = session.exec(select(Country).where(Country.name.ilike(country_name))).first()
+    if country:
+        return country.country_id, country.iso_a3
+    
+    # Check if the country name is actually an ISO code
+    if len(country_name) == 2 and validate_iso_a2(country_name):
+        # It's an ISO A2 code, convert to A3 and look up
+        iso_a3 = get_iso_a3_from_iso_a2(country_name)
+        if iso_a3:
+            country = session.exec(select(Country).where(Country.iso_a3 == iso_a3)).first()
+            if country:
+                return country.country_id, country.iso_a3
+    
+    elif len(country_name) == 3 and validate_iso_a3(country_name):
+        # It's an ISO A3 code, look up directly
+        country = session.exec(select(Country).where(Country.iso_a3 == country_name.upper())).first()
+        if country:
+            return country.country_id, country.iso_a3
+    
+    # Try some common name variations
+    name_variations = {
+        "United States": ["USA", "United States of America"],
+        "United Kingdom": ["UK", "Great Britain", "Britain"],
+        "Russia": ["Russian Federation"],
+        "South Korea": ["Korea, South", "Republic of Korea"],
+        "North Korea": ["Korea, North", "Democratic People's Republic of Korea"],
+        "Iran": ["Islamic Republic of Iran"],
+        "Syria": ["Syrian Arab Republic"],
+        "Venezuela": ["Bolivarian Republic of Venezuela"],
+        "Bolivia": ["Plurinational State of Bolivia"],
+        "Tanzania": ["United Republic of Tanzania"],
+        "Macedonia": ["North Macedonia", "Former Yugoslav Republic of Macedonia"],
+        "Congo": ["Republic of the Congo", "Congo-Brazzaville"],
+        "Democratic Republic of the Congo": ["Congo, Democratic Republic of the", "Congo-Kinshasa"],
+        "Ivory Coast": ["Côte d'Ivoire", "Cote d'Ivoire"],
+        "Cape Verde": ["Cabo Verde"],
+        "Swaziland": ["Eswatini"],
+        "Burma": ["Myanmar"],
+        "East Timor": ["Timor-Leste"],
+        "Czech Republic": ["Czechia"],
+    }
+    
+    # Check variations
+    for standard_name, variations in name_variations.items():
+        if country_name in variations or country_name == standard_name:
+            # Try to find the standard name or any variation
+            for name_to_try in [standard_name] + variations:
+                country = session.exec(select(Country).where(Country.name.ilike(name_to_try))).first()
+                if country:
+                    return country.country_id, country.iso_a3
+    
+    # Check if any country name contains the search term (partial match)
+    country = session.exec(select(Country).where(Country.name.ilike(f"%{country_name}%"))).first()
+    if country:
+        return country.country_id, country.iso_a3
+    
+    return None, None
+
 def create_airport_and_geo_records(airport_data, session):
     """Create Airport and AirportGeo records from airport data with comprehensive validation"""
     # Validate core airport data first
@@ -414,18 +488,14 @@ def create_airport_and_geo_records(airport_data, session):
             openflights_id=int(airport_data['openflights_id']) if airport_data.get('openflights_id') is not None else None
         )
         
-        # Look up country ID and ISO A3 code - now required for AirportGeo
+        # Look up country ID and ISO A3 code using improved matching
         country_id = None
         country_iso_a3 = None
         country_name = airport_data.get('country')
+        
         if country_name:
-            from models.country import Country
-            country = session.exec(select(Country).where(Country.name == country_name)).first()
-            if country:
-                country_id = country.country_id
-                country_iso_a3 = country.iso_a3
-            else:
-                # Country not found - this will prevent AirportGeo creation
+            country_id, country_iso_a3 = find_country_by_name(country_name, session)
+            if not country_id:
                 geo_warnings.append(f"Country '{country_name}' not found in database - skipping geographic data")
         else:
             geo_warnings.append("No country specified - skipping geographic data")
@@ -436,6 +506,7 @@ def create_airport_and_geo_records(airport_data, session):
             airport_geo = AirportGeo(
                 airport_id=None,  # Will be set after airport is saved
                 city=airport_data.get('city') if airport_data.get('city') else None,
+                country=country_name,  # Store raw country name from airports.dat
                 country_id=country_id,
                 iso_a3=country_iso_a3,
                 latitude=Decimal(str(airport_data['latitude'])) if airport_data.get('latitude') is not None else None,
@@ -644,14 +715,21 @@ def show_database_stats():
             )
             sample_results = session.exec(sample_query).all()
             
+            # Count records with raw country data
+            with_raw_country = len([g for g in total_geo if g.country])
+            
+            print(f"  With raw country data: {with_raw_country:,}")
+            
             print(f"\nSample airports with geographic data:")
             for airport, geo, country in sample_results:
                 iata_display = f"({airport.iata})" if airport.iata else "(no IATA)"
                 country_name = country.name if country else "Unknown"
-                location = f"{geo.city}, {country_name}" if geo.city else f"{country_name}"
+                raw_country = f" (raw: {geo.country})" if geo.country and geo.country != country_name else ""
+                location = f"{geo.city}, {country_name}{raw_country}" if geo.city else f"{country_name}{raw_country}"
                 coords = f"({geo.latitude}, {geo.longitude})" if geo.latitude and geo.longitude else "(no coords)"
+                iso_display = f" [{geo.iso_a3}]" if geo.iso_a3 else ""
                 print(f"  {airport.icao} {iata_display} - {airport.name}")
-                print(f"    Location: {location} {coords}")
+                print(f"    Location: {location}{iso_display} {coords}")
                 
     except Exception as e:
         print(f"✗ Failed to get database statistics: {e}")
