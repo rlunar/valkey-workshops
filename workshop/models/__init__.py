@@ -10,7 +10,8 @@ from .airport import Airport, AirportType
 from .airport_geo import AirportGeo, DSTType
 from .airline import Airline
 from .country import Country
-from .airplane import Airplane, AirplaneType
+from .airplane import Airplane
+from .airplane_type import AirplaneType
 from .flight import Flight, FlightLog, FlightSchedule
 from .passenger import Passenger, PassengerDetails
 from .booking import Booking

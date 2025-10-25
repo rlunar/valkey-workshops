@@ -33,7 +33,15 @@ cp .env.example .env
 # Edit .env with your database credentials
 ```
 
-### 4. Reset Database & Import Countries
+### 4. Complete Setup (Recommended)
+```bash
+# Run the complete setup script (imports all data)
+bash scripts/setup_workshop.sh
+```
+
+This imports all available data: countries, airports, airlines, and aircraft types.
+
+**Or setup step by step:**
 ```bash
 # Reset database (creates fresh tables)
 uv run python scripts/reset_database.py
@@ -51,22 +59,60 @@ After running the basic setup, your database will contain:
 - **Normalized Schema**: Clean separation between operational and geographic data
 - **Ready for Expansion**: Add airports, airlines, flights, and passenger data as needed
 
-After importing airports (optional), you'll also have:
+After importing all data (using `setup_workshop.sh`), you'll also have:
 - **Airport Table**: ~7,700 airports with ICAO/IATA codes and operational data
 - **AirportGeo Table**: Geographic data with coordinates, altitude, timezone, and country references
-- **Country Integration**: All airports properly linked to countries via foreign keys and ISO codes
+- **Airline Table**: ~6,100+ airlines with IATA/ICAO codes and operational details
+- **AirplaneType Table**: ~246 aircraft types with IATA/ICAO codes from OpenFlights
+- **Country Integration**: All data properly linked to countries via foreign keys and ISO codes
 
-## Import Airports Data
+## Import Additional Data
 
-### Download & Import Airports
+### Download & Import All Data
+```bash
+# Complete setup with all data sources
+bash scripts/setup_workshop.sh
+```
+
+### Individual Data Imports
+
+**Airports:**
 ```bash
 uv run python scripts/download_airports.py
 ```
+
+**Airlines:**
+```bash
+uv run python scripts/download_airlines.py
+```
+
+**Aircraft Types:**
+```bash
+uv run python scripts/download_planes.py
+```
+
+### Airport Data Import
 
 This script downloads and imports ~7,700 airports worldwide from OpenFlights.org with:
 - **Core Airport Data**: ICAO/IATA codes, names, types
 - **Geographic Data**: Coordinates, altitude, timezone information
 - **Country Matching**: Intelligent matching of airport countries to your country database using ISO codes
+
+### Airlines Data Import
+
+The airlines import provides:
+- **Airline Information**: Names, IATA/ICAO codes, callsigns
+- **Operational Status**: Active/inactive status tracking
+- **Country Data**: Home country information
+- **OpenFlights Integration**: Maintains OpenFlights ID references
+
+### Aircraft Types Data Import
+
+The aircraft types import provides:
+- **Aircraft Models**: Complete aircraft type names (e.g., "Boeing 737-800")
+- **IATA Codes**: 3-letter aircraft codes (e.g., "738")
+- **ICAO Codes**: 4-letter aircraft codes (e.g., "B738")
+- **Manufacturer Coverage**: Boeing, Airbus, Embraer, and many others
 
 ### What the Airport Import Does
 
@@ -89,26 +135,21 @@ This script downloads and imports ~7,700 airports worldwide from OpenFlights.org
 - **Data Preservation**: Stores original country names alongside normalized references
 - **Quality Validation**: Filters invalid coordinates, codes, and data
 
-### Example Airport Usage
+## Statistics and Validation
 
-```python
-from models import Airport, AirportGeo, Country
-from sqlmodel import Session, select
+View data statistics:
+```bash
+# View airport statistics
+uv run python scripts/airports_stats.py
 
-with Session(db_manager.engine) as session:
-    # Find airports in a specific country
-    us_airports = session.exec(
-        select(Airport, AirportGeo, Country)
-        .join(AirportGeo)
-        .join(Country)
-        .where(Country.iso_a3 == "USA")
-        .limit(5)
-    ).all()
-    
-    for airport, geo, country in us_airports:
-        print(f"{airport.icao} - {airport.name}")
-        print(f"  Location: {geo.city}, {country.name}")
-        print(f"  Coordinates: {geo.latitude}, {geo.longitude}")
+# View airline statistics  
+uv run python scripts/airlines_stats.py
+
+# View aircraft type statistics
+uv run python scripts/planes_stats.py
+
+# Validate all models
+uv run python scripts/validate_models.py
 ```
 
 ## Usage Example
@@ -130,20 +171,62 @@ with Session(db_manager.engine) as session:
     # Output: United States: US / USA
 ```
 
+### Example Usage
+
+```python
+from models.database import DatabaseManager
+from models import Airport, AirportGeo, Country, Airline, AirplaneType
+from sqlmodel import Session, select
+
+db_manager = DatabaseManager()
+
+with Session(db_manager.engine) as session:
+    # Find airports in a specific country
+    us_airports = session.exec(
+        select(Airport, AirportGeo, Country)
+        .join(AirportGeo)
+        .join(Country)
+        .where(Country.iso_a3 == "USA")
+        .limit(5)
+    ).all()
+    
+    for airport, geo, country in us_airports:
+        print(f"{airport.icao} - {airport.name}")
+        print(f"  Location: {geo.city}, {country.name}")
+        print(f"  Coordinates: {geo.latitude}, {geo.longitude}")
+    
+    # Find Boeing aircraft types
+    boeing_aircraft = session.exec(
+        select(AirplaneType)
+        .where(AirplaneType.name.contains("Boeing"))
+        .limit(5)
+    ).all()
+    
+    for aircraft in boeing_aircraft:
+        print(f"{aircraft.iata}/{aircraft.icao} - {aircraft.name}")
+```
+
 ## Data Sources
 
 - **Countries**: OpenFlights.org country data with ISO 3166-1 codes
 - **Airports**: OpenFlights.org airport database (~7,700 airports worldwide)
+- **Airlines**: OpenFlights.org airline database (~6,100+ airlines)
+- **Aircraft Types**: OpenFlights.org planes database (~246 aircraft types)
 - **ISO Codes**: Complete ISO 3166-1 alpha-2 and alpha-3 country code mappings
 
 ## Project Structure
 
 ```
-├── models/           # SQLModel classes (Airport, AirportGeo, Country)
+├── models/           # SQLModel classes (Airport, AirportGeo, Country, Airline, AirplaneType)
 ├── scripts/          # Database setup and import scripts
+│   ├── setup_workshop.sh      # Complete setup script (all data)
 │   ├── reset_database.py      # Create fresh database tables
 │   ├── download_countries.py  # Import country data
-│   └── download_airports.py   # Import airport data with country matching
+│   ├── download_airports.py   # Import airport data with country matching
+│   ├── download_airlines.py   # Import airline data
+│   ├── download_planes.py     # Import aircraft type data
+│   ├── *_stats.py            # Statistics scripts for each data type
+│   └── validate_models.py     # Model validation
 ├── utils/            # ISO country code mappings and utilities
 ├── docs/             # Database setup files and documentation
 └── .env.example      # Configuration template

@@ -57,6 +57,7 @@ echo "  1. Reset the database (DROP ALL TABLES)"
 echo "  2. Download and import countries data"
 echo "  3. Download and import airports data"
 echo "  4. Download and import airlines data"
+echo "  5. Download and import aircraft types data"
 echo
 print_warning "This will DELETE ALL EXISTING DATA in your database!"
 echo
@@ -134,6 +135,17 @@ if [ $? -ne 0 ]; then
 fi
 print_success "Airlines data imported successfully"
 
+# Step 5: Download Aircraft Types
+print_header "Step 5: Importing Aircraft Types Data"
+print_status "Downloading and importing aircraft types from OpenFlights.org..."
+
+echo "y" | uv run python scripts/download_planes.py
+if [ $? -ne 0 ]; then
+    print_error "Aircraft types import failed"
+    exit 1
+fi
+print_success "Aircraft types data imported successfully"
+
 # Final Summary
 print_header "Setup Complete!"
 print_success "Database setup completed successfully!"
@@ -142,10 +154,12 @@ echo "Your Flughafen DB now contains:"
 echo "  ✓ Countries data (~260 countries with ISO codes)"
 echo "  ✓ Airports data (~7,700 airports worldwide)"
 echo "  ✓ Airlines data (~6,100+ airlines)"
+echo "  ✓ Aircraft types data (~246 aircraft types)"
 echo
 echo "Next steps:"
 echo "  • Run validation: uv run python scripts/validate_models.py"
 echo "  • View statistics: uv run python scripts/airlines_stats.py"
+echo "  • View aircraft stats: uv run python scripts/planes_stats.py"
 echo "  • Try examples: uv run python scripts/database_example.py"
 echo
 print_success "Happy coding! ✈️"
