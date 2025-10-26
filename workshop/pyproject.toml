@@ -12,4 +12,6 @@ dependencies = [
     "polars>=0.20.0",
     "requests>=2.31.0",
     "tqdm>=4.66.0",
+    "textual>=0.41.0",
+    "rich>=13.0.0",
 ]
