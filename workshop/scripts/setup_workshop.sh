@@ -55,10 +55,11 @@ print_header "Flughafen DB Complete Setup"
 echo "This script will:"
 echo "  1. Reset the database (DROP ALL TABLES)"
 echo "  2. Download and import countries data"
-echo "  3. Download and import airports data"
-echo "  4. Download and import airlines data"
-echo "  5. Download and import aircraft types data"
-echo "  6. Download and import routes data"
+echo "  3. Download and import cities data (optional)"
+echo "  4. Download and import aircraft types data"
+echo "  5. Download and import airlines data"
+echo "  6. Download and import airports data"
+echo "  7. Download and import routes data"
 echo
 print_warning "This will DELETE ALL EXISTING DATA in your database!"
 echo
@@ -114,30 +115,25 @@ if [ $? -ne 0 ]; then
 fi
 print_success "Countries data imported successfully"
 
-# Step 3: Download Airports
-print_header "Step 3: Importing Airports Data"
-print_status "Downloading and importing airports from OpenFlights.org..."
+# Step 3: Download Cities
+print_header "Step 3: Importing Cities Data"
+print_status "Downloading city population data from GeoNames for flight planning..."
+echo "This will download ~160k cities with population data for flight frequency planning."
+echo "It may take several minutes to download and process."
+echo
 
-echo "y" | uv run python scripts/download_airports.py
+print_status "Downloading and importing cities from GeoNames..."
+
+# Use cities15000 dataset for good balance of coverage and performance
+uv run python scripts/download_cities.py --dataset cities15000 --verbose
 if [ $? -ne 0 ]; then
-    print_error "Airports import failed"
+    print_error "Cities import failed"
     exit 1
 fi
-print_success "Airports data imported successfully"
+print_success "Cities data imported successfully"
 
-# Step 4: Download Airlines
-print_header "Step 4: Importing Airlines Data"
-print_status "Downloading and importing airlines from OpenFlights.org..."
-
-echo "y" | uv run python scripts/download_airlines.py
-if [ $? -ne 0 ]; then
-    print_error "Airlines import failed"
-    exit 1
-fi
-print_success "Airlines data imported successfully"
-
-# Step 5: Download Aircraft Types
-print_header "Step 5: Importing Aircraft Types Data"
+# Step 4: Download Aircraft Types (Airplanes)
+print_header "Step 4: Importing Aircraft Types Data"
 print_status "Downloading and importing aircraft types from OpenFlights.org..."
 
 echo "y" | uv run python scripts/download_planes.py
@@ -147,8 +143,64 @@ if [ $? -ne 0 ]; then
 fi
 print_success "Aircraft types data imported successfully"
 
-# Step 6: Download Routes
-print_header "Step 6: Importing Routes Data"
+# Step 5: Download Airlines
+print_header "Step 5: Importing Airlines Data"
+print_status "Downloading and importing airlines from OpenFlights.org..."
+
+echo "y" | uv run python scripts/download_airlines.py
+if [ $? -ne 0 ]; then
+    print_error "Airlines import failed"
+    exit 1
+fi
+print_success "Airlines data imported successfully"
+
+# Step 6: Download Airports
+print_header "Step 6: Importing Airports Data"
+print_status "Downloading and importing airports from OpenFlights.org..."
+
+echo "y" | uv run python scripts/download_airports.py
+if [ $? -ne 0 ]; then
+    print_error "Airports import failed"
+    exit 1
+fi
+print_success "Airports data imported successfully"
+
+# Step 7: Create City-Airport Relations
+print_header "Step 7: Creating City-Airport Relationships"
+
+# Check if cities were imported
+cities_imported=$(uv run python -c "
+import sys, os
+sys.path.append('.')
+from models.database import DatabaseManager
+from sqlmodel import Session, select, func
+from models.city import City
+try:
+    db = DatabaseManager()
+    with Session(db.engine) as session:
+        count = session.exec(select(func.count(City.city_id))).first()
+        print(count if count else 0)
+except:
+    print(0)
+" 2>/dev/null)
+
+if [ "$cities_imported" -gt 0 ]; then
+    print_status "Creating relationships between cities and airports..."
+    echo "This step maps airports to nearby cities for flight planning analysis."
+    echo
+    
+    uv run python scripts/create_city_airport_relations.py --max-distance 100
+    if [ $? -ne 0 ]; then
+        print_warning "City-airport relationships creation failed, but continuing..."
+    else
+        print_success "City-airport relationships created successfully"
+    fi
+else
+    print_status "Skipping city-airport relationships (cities not imported)"
+fi
+
+# Step 8: Download Routes
+print_header "Step 8: Importing Routes Data"
 print_status "Downloading and importing routes from OpenFlights.org..."
 
 echo "y" | uv run python scripts/download_routes.py
@@ -164,10 +216,38 @@ print_success "Database setup completed successfully!"
 echo
 echo "Your Flughafen DB now contains:"
 echo "  ✓ Countries data (~260 countries with ISO codes)"
-echo "  ✓ Airports data (~7,700 airports worldwide)"
-echo "  ✓ Airlines data (~6,100+ airlines)"
 echo "  ✓ Aircraft types data (~246 aircraft types)"
+echo "  ✓ Airlines data (~6,100+ airlines)"
+echo "  ✓ Airports data (~7,700 airports worldwide)"
 echo "  ✓ Routes data (~67,600+ routes between airports)"
+
+# Check if cities and city-airport relations were imported
+uv run python -c "
+import sys, os
+sys.path.append('.')
+from models.database import DatabaseManager
+from sqlmodel import Session, select, func
+from models.city import City, CityAirportRelation
+try:
+    db = DatabaseManager()
+    with Session(db.engine) as session:
+        city_count = session.exec(select(func.count(City.city_id))).first()
+        relation_count = session.exec(select(func.count(CityAirportRelation.relation_id))).first()
+        
+        if city_count and city_count > 0:
+            print(f'  ✓ Cities data (~{city_count:,} cities with population data)')
+            if relation_count and relation_count > 0:
+                print(f'  ✓ City-airport relationships (~{relation_count:,} relationships)')
+            else:
+                print('  • City-airport relationships (not created - run scripts/create_city_airport_relations.py)')
+        else:
+            print('  • Cities data (not imported - run scripts/download_cities.py)')
+            print('  • City-airport relationships (requires cities data)')
+except Exception as e:
+    print('  • Cities data (not imported - run scripts/download_cities.py)')
+    print('  • City-airport relationships (requires cities data)')
+" 2>/dev/null
+
 echo
 echo "Next steps:"
 echo "  • Run validation: uv run python scripts/validate_models.py"
@@ -176,5 +256,56 @@ echo "  • View aircraft stats: uv run python scripts/planes_stats.py"
 echo "  • View route stats: uv run python scripts/routes_stats.py"
 echo "  • Try examples: uv run python scripts/database_example.py"
 echo "  • Try route examples: uv run python scripts/route_example.py"
+if uv run python -c "
+import sys, os
+sys.path.append('.')
+from models.database import DatabaseManager
+from sqlmodel import Session, select, func
+from models.city import City, CityAirportRelation
+try:
+    db = DatabaseManager()
+    with Session(db.engine) as session:
+        city_count = session.exec(select(func.count(City.city_id))).first()
+        relation_count = session.exec(select(func.count(CityAirportRelation.relation_id))).first()
+        
+        if city_count and city_count > 0:
+            print('cities')
+            if relation_count and relation_count > 0:
+                print('relations')
+        exit(0)
+except:
+    exit(1)
+" 2>/dev/null; then
+    output=$(uv run python -c "
+import sys, os
+sys.path.append('.')
+from models.database import DatabaseManager
+from sqlmodel import Session, select, func
+from models.city import City, CityAirportRelation
+try:
+    db = DatabaseManager()
+    with Session(db.engine) as session:
+        city_count = session.exec(select(func.count(City.city_id))).first()
+        relation_count = session.exec(select(func.count(CityAirportRelation.relation_id))).first()
+        
+        if city_count and city_count > 0:
+            print('cities')
+            if relation_count and relation_count > 0:
+                print('relations')
+except:
+    pass
+" 2>/dev/null)
+    
+    if echo "$output" | grep -q "cities"; then
+        echo "  • Analyze cities: uv run python scripts/cities_flight_analysis.py"
+        echo "  • City examples: uv run python scripts/city_example.py"
+        
+        if echo "$output" | grep -q "relations"; then
+            echo "  • City-airport analysis: uv run python scripts/city_airport_analysis.py"
+        else
+            echo "  • Create city-airport relationships: uv run python scripts/create_city_airport_relations.py"
+        fi
+    fi
+fi
 echo
 print_success "Happy coding! ✈️"

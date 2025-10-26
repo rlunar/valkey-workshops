@@ -15,7 +15,7 @@ class Passenger(SQLModel, table=True):
 class PassengerDetails(SQLModel, table=True):
     __tablename__ = "passengerdetails"
     
-    passenger_id: int = Field(primary_key=True, foreign_key="passenger.passenger_id")
+    passenger_id: int = Field(primary_key=True, index=True)  # Reference to passenger, no FK constraint
     birthdate: date
     sex: Optional[str] = Field(max_length=1)
     street: str = Field(max_length=100)

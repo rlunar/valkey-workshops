@@ -20,6 +20,7 @@ from .booking import Booking
 from .employee import Employee
 from .weather import WeatherData
 from .route import Route
+from .city import City, CityAirportRelation
 
 __all__ = [
     "Airport",
@@ -39,4 +40,6 @@ __all__ = [
     "Employee",
     "WeatherData",
     "Route",
+    "City",
+    "CityAirportRelation",
 ]

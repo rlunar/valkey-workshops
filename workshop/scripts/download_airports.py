@@ -394,22 +394,24 @@ def prepare_airport_data(df):
 def find_country_by_name(country_name, session):
     """Find country in database by name with fuzzy matching and ISO code fallback"""
     from models.country import Country
-    from utils.iso_country_codes import get_iso_a3_from_iso_a2, validate_iso_a3, validate_iso_a2
+    from utils.iso_country_codes import get_iso_a3_from_iso_a2, get_iso_a2_from_iso_a3, validate_iso_a3, validate_iso_a2
     
     if not country_name:
-        return None, None
+        return None, None, None
     
     country_name = country_name.strip()
     
     # First try exact name match
     country = session.exec(select(Country).where(Country.name == country_name)).first()
     if country:
-        return country.country_id, country.iso_a3
+        iso_a2 = get_iso_a2_from_iso_a3(country.iso_a3) if country.iso_a3 else None
+        return country.country_id, country.iso_a3, iso_a2
     
     # Try case-insensitive match
     country = session.exec(select(Country).where(Country.name.ilike(country_name))).first()
     if country:
-        return country.country_id, country.iso_a3
+        iso_a2 = get_iso_a2_from_iso_a3(country.iso_a3) if country.iso_a3 else None
+        return country.country_id, country.iso_a3, iso_a2
     
     # Check if the country name is actually an ISO code
     if len(country_name) == 2 and validate_iso_a2(country_name):
@@ -418,13 +420,14 @@ def find_country_by_name(country_name, session):
         if iso_a3:
             country = session.exec(select(Country).where(Country.iso_a3 == iso_a3)).first()
             if country:
-                return country.country_id, country.iso_a3
+                return country.country_id, country.iso_a3, country_name.upper()
     
     elif len(country_name) == 3 and validate_iso_a3(country_name):
         # It's an ISO A3 code, look up directly
         country = session.exec(select(Country).where(Country.iso_a3 == country_name.upper())).first()
         if country:
-            return country.country_id, country.iso_a3
+            iso_a2 = get_iso_a2_from_iso_a3(country_name.upper())
+            return country.country_id, country.iso_a3, iso_a2
     
     # Try some common name variations
     name_variations = {
@@ -456,14 +459,16 @@ def find_country_by_name(country_name, session):
             for name_to_try in [standard_name] + variations:
                 country = session.exec(select(Country).where(Country.name.ilike(name_to_try))).first()
                 if country:
-                    return country.country_id, country.iso_a3
+                    iso_a2 = get_iso_a2_from_iso_a3(country.iso_a3) if country.iso_a3 else None
+                    return country.country_id, country.iso_a3, iso_a2
     
     # Check if any country name contains the search term (partial match)
     country = session.exec(select(Country).where(Country.name.ilike(f"%{country_name}%"))).first()
     if country:
-        return country.country_id, country.iso_a3
+        iso_a2 = get_iso_a2_from_iso_a3(country.iso_a3) if country.iso_a3 else None
+        return country.country_id, country.iso_a3, iso_a2
     
-    return None, None
+    return None, None, None
 
 def create_airport_and_geo_records(airport_data, session):
     """Create Airport and AirportGeo records from airport data with comprehensive validation"""
@@ -488,13 +493,14 @@ def create_airport_and_geo_records(airport_data, session):
             openflights_id=int(airport_data['openflights_id']) if airport_data.get('openflights_id') is not None else None
         )
         
-        # Look up country ID and ISO A3 code using improved matching
+        # Look up country ID and ISO codes using improved matching
         country_id = None
         country_iso_a3 = None
+        country_iso_a2 = None
         country_name = airport_data.get('country')
         
         if country_name:
-            country_id, country_iso_a3 = find_country_by_name(country_name, session)
+            country_id, country_iso_a3, country_iso_a2 = find_country_by_name(country_name, session)
             if not country_id:
                 geo_warnings.append(f"Country '{country_name}' not found in database - skipping geographic data")
         else:
@@ -508,7 +514,8 @@ def create_airport_and_geo_records(airport_data, session):
                 city=airport_data.get('city') if airport_data.get('city') else None,
                 country=country_name,  # Store raw country name from airports.dat
                 country_id=country_id,
-                iso_a3=country_iso_a3,
+                iso_a2=country_iso_a2,  # 2-letter ISO country code
+                iso_a3=country_iso_a3,  # 3-letter ISO country code
                 latitude=Decimal(str(airport_data['latitude'])) if airport_data.get('latitude') is not None else None,
                 longitude=Decimal(str(airport_data['longitude'])) if airport_data.get('longitude') is not None else None,
                 altitude=int(airport_data['altitude']) if airport_data.get('altitude') is not None else None,

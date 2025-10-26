@@ -19,11 +19,12 @@ class AirportGeo(SQLModel, table=True):
     """Geographic data for airports, normalized from the main Airport table"""
     __tablename__ = "airport_geo"
     
-    airport_id: int = Field(primary_key=True, foreign_key="airport.airport_id")
+    airport_id: int = Field(primary_key=True, index=True)  # Reference to airport, no FK constraint
     city: Optional[str] = Field(default=None, max_length=100)
     country: Optional[str] = Field(default=None, max_length=100)  # Raw country name from airports.dat
-    country_id: int = Field(foreign_key="country.country_id", index=True)
-    iso_a3: Optional[str] = Field(default=None, max_length=3, index=True)
+    country_id: Optional[int] = Field(default=None, index=True)  # Reference to country, no FK constraint
+    iso_a2: Optional[str] = Field(default=None, max_length=2, index=True)  # 2-letter ISO country code
+    iso_a3: Optional[str] = Field(default=None, max_length=3, index=True)  # 3-letter ISO country code
     latitude: Optional[Decimal] = Field(default=None, max_digits=11, decimal_places=8)
     longitude: Optional[Decimal] = Field(default=None, max_digits=11, decimal_places=8)
     altitude: Optional[int] = Field(default=None)

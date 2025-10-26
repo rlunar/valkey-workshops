@@ -8,7 +8,7 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
-    from sqlmodel import SQLModel
+    from sqlmodel import SQLModel, text
     from models.database import DatabaseManager
     from dotenv import load_dotenv
     DEPENDENCIES_AVAILABLE = True
@@ -43,9 +43,21 @@ def reset_database():
         db_manager = DatabaseManager()
         print("✓ Connected to database successfully!")
         
-        # Drop all tables
+        # Drop all tables (disable foreign key checks first)
         print("Dropping existing tables...")
+        
+        # Disable foreign key checks to allow dropping tables with constraints
+        with db_manager.engine.connect() as connection:
+            connection.execute(text("SET FOREIGN_KEY_CHECKS = 0"))
+            connection.commit()
+        
         SQLModel.metadata.drop_all(db_manager.engine)
+        
+        # Re-enable foreign key checks
+        with db_manager.engine.connect() as connection:
+            connection.execute(text("SET FOREIGN_KEY_CHECKS = 1"))
+            connection.commit()
+            
         print("✓ Dropped all existing tables")
         
         # Create new tables with updated schema

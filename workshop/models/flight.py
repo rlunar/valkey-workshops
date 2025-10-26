@@ -8,9 +8,9 @@ class Flight(SQLModel, table=True):
     
     flight_id: Optional[int] = Field(default=None, primary_key=True)
     flightno: str = Field(max_length=8)
-    from_airport: int = Field(alias="from", foreign_key="airport.airport_id", index=True)
-    to_airport: int = Field(alias="to", foreign_key="airport.airport_id", index=True)
+    from_airport: int = Field(alias="from", index=True)  # Reference to airport, no FK constraint
+    to_airport: int = Field(alias="to", index=True)  # Reference to airport, no FK constraint
     departure: datetime = Field(index=True)
     arrival: datetime = Field(index=True)
-    airline_id: int = Field(foreign_key="airline.airline_id", index=True)
-    airplane_id: int = Field(foreign_key="airplane.airplane_id", index=True)
+    airline_id: int = Field(index=True)  # Reference to airline, no FK constraint
+    airplane_id: int = Field(index=True)  # Reference to airplane, no FK constraint

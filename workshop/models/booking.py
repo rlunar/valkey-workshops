@@ -7,9 +7,9 @@ class Booking(SQLModel, table=True):
     __tablename__ = "booking"
     
     booking_id: Optional[int] = Field(default=None, primary_key=True)
-    flight_id: int = Field(foreign_key="flight.flight_id", index=True)
+    flight_id: int = Field(index=True)  # Reference to flight, no FK constraint
     seat: Optional[str] = Field(max_length=4)
-    passenger_id: int = Field(foreign_key="passenger.passenger_id", index=True)
+    passenger_id: int = Field(index=True)  # Reference to passenger, no FK constraint
     price: Decimal = Field(max_digits=10, decimal_places=2)
     
     class Config:
