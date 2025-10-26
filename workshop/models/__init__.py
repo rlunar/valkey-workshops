@@ -12,7 +12,9 @@ from .airline import Airline
 from .country import Country
 from .airplane import Airplane
 from .airplane_type import AirplaneType
-from .flight import Flight, FlightLog, FlightSchedule
+from .flight import Flight
+from .flight_log import FlightLog
+from .flight_schedule import FlightSchedule
 from .passenger import Passenger, PassengerDetails
 from .booking import Booking
 from .employee import Employee
