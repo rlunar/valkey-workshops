@@ -134,18 +134,24 @@ def validate_airline_data(airline_data):
     
     # Optional field validation
     iata = airline_data.get('iata')
-    if iata and iata.strip():
-        if not isinstance(iata, str) or len(iata.strip()) != 2:
+    if iata and iata.strip() and iata.strip() != "\\N":
+        iata_clean = iata.strip()
+        if not isinstance(iata_clean, str) or len(iata_clean) != 2:
             warnings.append("IATA code should be exactly 2 characters if provided")
-        elif not iata.strip().isalpha():
+        elif not iata_clean.isalpha():
             warnings.append("IATA code should contain only letters")
+        elif len(iata_clean) > 2:  # Catch codes that are too long
+            errors.append(f"IATA code '{iata_clean}' is too long (max 2 characters)")
     
     icao = airline_data.get('icao')
-    if icao and icao.strip():
-        if not isinstance(icao, str) or len(icao.strip()) != 3:
+    if icao and icao.strip() and icao.strip() != "\\N":
+        icao_clean = icao.strip()
+        if not isinstance(icao_clean, str) or len(icao_clean) != 3:
             warnings.append("ICAO code should be exactly 3 characters if provided")
-        elif not icao.strip().isalnum():
+        elif not icao_clean.isalnum():
             warnings.append("ICAO code should contain only letters and numbers")
+        elif len(icao_clean) > 3:  # Catch codes that are too long
+            errors.append(f"ICAO code '{icao_clean}' is too long (max 3 characters)")
     
     # Other field validation
     alias = airline_data.get('alias')
@@ -194,8 +200,9 @@ def prepare_airline_data(df):
         pl.when(
             (pl.col("iata").is_not_null()) & 
             (pl.col("iata") != "") & 
+            (pl.col("iata") != "\\N") &  # OpenFlights null value
             (pl.col("iata").str.len_chars() == 2) &
-            (pl.col("iata").str.to_uppercase().str.contains(r"^[A-Z]{2}$"))
+            (pl.col("iata").str.contains(r"^[A-Za-z]{2}$"))  # Only letters, no special chars
         )
         .then(pl.col("iata").str.to_uppercase())
         .otherwise(None)
@@ -205,8 +212,9 @@ def prepare_airline_data(df):
         pl.when(
             (pl.col("icao").is_not_null()) & 
             (pl.col("icao") != "") & 
+            (pl.col("icao") != "\\N") &  # OpenFlights null value
             (pl.col("icao").str.len_chars() == 3) &
-            (pl.col("icao").str.to_uppercase().str.contains(r"^[A-Z0-9]{3}$"))
+            (pl.col("icao").str.contains(r"^[A-Za-z0-9]{3}$"))  # Only letters and numbers, no special chars
         )
         .then(pl.col("icao").str.to_uppercase())
         .otherwise(None)
@@ -268,12 +276,34 @@ def create_airline_record(airline_data):
         return None, errors
     
     try:
+        # Clean and validate IATA code
+        iata_code = airline_data.get('iata')
+        if iata_code and iata_code.strip() and iata_code.strip() != "\\N":
+            iata_clean = iata_code.strip()
+            if len(iata_clean) > 2 or not iata_clean.isalpha():
+                iata_code = None  # Set to None if invalid
+            else:
+                iata_code = iata_clean.upper()
+        else:
+            iata_code = None
+        
+        # Clean and validate ICAO code
+        icao_code = airline_data.get('icao')
+        if icao_code and icao_code.strip() and icao_code.strip() != "\\N":
+            icao_clean = icao_code.strip()
+            if len(icao_clean) > 3 or not icao_clean.isalnum():
+                icao_code = None  # Set to None if invalid
+            else:
+                icao_code = icao_clean.upper()
+        else:
+            icao_code = None
+        
         # Create Airline record
         airline = Airline(
             name=airline_data['name'].strip(),
             alias=airline_data.get('alias') if airline_data.get('alias') else None,
-            iata=airline_data.get('iata') if airline_data.get('iata') else None,
-            icao=airline_data.get('icao') if airline_data.get('icao') else None,
+            iata=iata_code,
+            icao=icao_code,
             callsign=airline_data.get('callsign') if airline_data.get('callsign') else None,
             country=airline_data.get('country') if airline_data.get('country') else None,
             active=airline_data.get('active', True),
@@ -457,73 +487,150 @@ def show_database_stats():
 
 def main():
     """Main function to download and import airlines data"""
+    import argparse
+    
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='Download and import airlines data from OpenFlights.org')
+    parser.add_argument('--verbose', '-v', action='store_true', 
+                       help='Enable verbose output (default: progress bar only)')
+    parser.add_argument('--yes', '-y', action='store_true',
+                       help='Auto-confirm import without prompting')
+    args = parser.parse_args()
+    
     if not DEPENDENCIES_AVAILABLE:
         print("Please install dependencies first: uv sync")
         return False
     
-    print("✈️  OpenFlights Airlines Data Import")
-    print("=" * 40)
+    if args.verbose:
+        print("✈️  OpenFlights Airlines Data Import")
+        print("=" * 40)
     
     # Check if .env file exists
     if not os.path.exists('.env'):
-        print("⚠ .env file not found")
-        print("Copy .env.example to .env and configure your database settings")
-        print("You can still download and analyze data without database connection")
+        if args.verbose:
+            print("⚠ .env file not found")
+            print("Copy .env.example to .env and configure your database settings")
+            print("You can still download and analyze data without database connection")
         
-        # Offer to continue without database import
-        try:
-            response = input("\nContinue with download and analysis only? (y/N): ").strip().lower()
-            if response != 'y':
+        if not args.yes:
+            # Offer to continue without database import
+            try:
+                response = input("\nContinue with download and analysis only? (y/N): ").strip().lower()
+                if response != 'y':
+                    return False
+            except KeyboardInterrupt:
+                print("\nOperation cancelled")
                 return False
-        except KeyboardInterrupt:
-            print("\nOperation cancelled")
-            return False
     
     # Step 1: Download data
     if not AIRLINES_FILE.exists():
         if not download_airlines_data():
             return False
     else:
-        print(f"✓ Airlines data already exists: {AIRLINES_FILE}")
+        if args.verbose:
+            print(f"✓ Airlines data already exists: {AIRLINES_FILE}")
     
     # Step 2: Analyze data
-    df = analyze_airlines_data()
+    if args.verbose:
+        df = analyze_airlines_data()
+    else:
+        # Silent analysis for non-verbose mode
+        try:
+            column_names = ["airline_id", "name", "alias", "iata", "icao", "callsign", "country", "active"]
+            df = pl.read_csv(
+                AIRLINES_FILE,
+                has_header=False,
+                new_columns=column_names,
+                null_values=["\\N", ""],
+                encoding="utf8"
+            )
+        except Exception as e:
+            print(f"❌ Failed to analyze airlines data: {e}")
+            return False
+    
     if df is None:
         return False
     
     # Step 3: Prepare data
-    prepared_df = prepare_airline_data(df)
+    if args.verbose:
+        prepared_df = prepare_airline_data(df)
+    else:
+        # Silent preparation for non-verbose mode
+        prepared_df = df.select([
+            pl.col("airline_id").alias("openflights_id"),
+            pl.col("name").str.strip_chars().alias("name"),
+            pl.col("alias").str.strip_chars().alias("alias"),
+            pl.col("iata").str.strip_chars().alias("iata"),
+            pl.col("icao").str.strip_chars().alias("icao"),
+            pl.col("callsign").str.strip_chars().alias("callsign"),
+            pl.col("country").str.strip_chars().alias("country"),
+            # Convert active flag to boolean
+            pl.when(pl.col("active") == "Y")
+            .then(True)
+            .when(pl.col("active") == "N")
+            .then(False)
+            .otherwise(None)
+            .alias("active")
+        ]).filter(
+            (pl.col("name").is_not_null()) &
+            (pl.col("name") != "") &
+            (pl.col("name").str.len_chars() <= 200)
+        )
+    
     if len(prepared_df) == 0:
-        print("✗ No suitable airline data found")
+        print("❌ No suitable airline data found")
         return False
     
     # Step 4: Insert into database (if .env exists)
     if os.path.exists('.env'):
-        print(f"\nFound {len(prepared_df):,} airlines ready for import")
+        if args.verbose:
+            print(f"\nFound {len(prepared_df):,} airlines ready for import")
         
-        # Ask user what to do
-        print("What would you like to do?")
-        print("  y = Import airlines into database")
-        print("  s = Show current database statistics only")
-        
-        choice = input("\nChoice (y/s): ").strip().lower()
-        
-        if choice == 's':
-            show_database_stats()
-            return True
-        elif choice == 'y':
-            print("Importing airlines into database...")
+        if args.yes:
+            # Auto-import
+            if args.verbose:
+                print("Importing airlines into database...")
             if not insert_airlines_to_database(prepared_df):
                 return False
+        else:
+            # Ask user what to do
+            if args.verbose:
+                print("What would you like to do?")
+                print("  y = Import airlines into database")
+                print("  s = Show current database statistics only")
+                
+                choice = input("\nChoice (y/s): ").strip().lower()
+            else:
+                choice = input("Import airlines into database? (y/N): ").strip().lower()
+            
+            if choice == 's' and args.verbose:
+                show_database_stats()
+                return True
+            elif choice == 'y':
+                if args.verbose:
+                    print("Importing airlines into database...")
+                if not insert_airlines_to_database(prepared_df):
+                    return False
+            else:
+                if args.verbose:
+                    print("Invalid choice. Showing statistics only.")
+                    show_database_stats()
+                else:
+                    print("Operation cancelled")
+                return True
+        
+        if args.verbose:
             print("\n" + "=" * 50)
             show_database_stats()
             print("\n🎉 Airlines data import completed successfully!")
         else:
-            print("Invalid choice. Showing statistics only.")
-            show_database_stats()
+            print("✅ Airlines imported successfully!")
     else:
-        print(f"\n✓ Data analysis completed! {len(prepared_df)} airlines ready for import")
-        print("Configure .env file and run again to import into database")
+        if args.verbose:
+            print(f"\n✓ Data analysis completed! {len(prepared_df)} airlines ready for import")
+            print("Configure .env file and run again to import into database")
+        else:
+            print("❌ .env file not found - configure database settings")
     
     return True
 

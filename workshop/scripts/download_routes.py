@@ -6,6 +6,7 @@ Download and import routes data from OpenFlights.org
 import sys
 import os
 import requests
+import argparse
 from pathlib import Path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -65,13 +66,14 @@ def download_routes_data():
         print(f"❌ Failed to download routes data: {e}")
         return False
 
-def analyze_routes_data():
+def analyze_routes_data(verbose=False):
     """Analyze the routes.dat file structure using Polars"""
     if not ROUTES_FILE.exists():
         print(f"✗ Routes file not found: {ROUTES_FILE}")
         return None
     
-    print("Analyzing routes data structure...")
+    if verbose:
+        print("Analyzing routes data structure...")
     
     # OpenFlights routes.dat format (CSV without headers):
     # Airline, Airline ID, Source airport, Source airport ID, Destination airport, 
@@ -100,22 +102,24 @@ def analyze_routes_data():
         )
         
         print(f"✓ Loaded {len(df)} routes from OpenFlights data")
-        print(f"Columns: {df.columns}")
-        print(f"Shape: {df.shape}")
         
-        # Show sample data
-        print("\nSample data:")
-        print(df.head(3))
-        
-        # Data quality analysis
-        print("\nData Quality Analysis:")
-        print(f"- Total routes: {len(df)}")
-        print(f"- Routes with airline codes: {df.filter(pl.col('airline_code').is_not_null() & (pl.col('airline_code') != '')).height}")
-        print(f"- Routes with source airport codes: {df.filter(pl.col('source_airport_code').is_not_null() & (pl.col('source_airport_code') != '')).height}")
-        print(f"- Routes with destination airport codes: {df.filter(pl.col('destination_airport_code').is_not_null() & (pl.col('destination_airport_code') != '')).height}")
-        print(f"- Codeshare routes: {df.filter(pl.col('codeshare') == 'Y').height}")
-        print(f"- Direct routes (0 stops): {df.filter(pl.col('stops') == 0).height}")
-        print(f"- Routes with equipment info: {df.filter(pl.col('equipment').is_not_null() & (pl.col('equipment') != '')).height}")
+        if verbose:
+            print(f"Columns: {df.columns}")
+            print(f"Shape: {df.shape}")
+            
+            # Show sample data
+            print("\nSample data:")
+            print(df.head(3))
+            
+            # Data quality analysis
+            print("\nData Quality Analysis:")
+            print(f"- Total routes: {len(df)}")
+            print(f"- Routes with airline codes: {df.filter(pl.col('airline_code').is_not_null() & (pl.col('airline_code') != '')).height}")
+            print(f"- Routes with source airport codes: {df.filter(pl.col('source_airport_code').is_not_null() & (pl.col('source_airport_code') != '')).height}")
+            print(f"- Routes with destination airport codes: {df.filter(pl.col('destination_airport_code').is_not_null() & (pl.col('destination_airport_code') != '')).height}")
+            print(f"- Codeshare routes: {df.filter(pl.col('codeshare') == 'Y').height}")
+            print(f"- Direct routes (0 stops): {df.filter(pl.col('stops') == 0).height}")
+            print(f"- Routes with equipment info: {df.filter(pl.col('equipment').is_not_null() & (pl.col('equipment') != '')).height}")
         
         return df
         
@@ -182,9 +186,10 @@ def validate_route_data(route_data):
     
     return errors, warnings
 
-def prepare_route_data(df):
+def prepare_route_data(df, verbose=False):
     """Prepare route data for database insertion"""
-    print("Preparing route data for database insertion...")
+    if verbose:
+        print("Preparing route data for database insertion...")
     
     prepared_df = df.select([
         pl.col("airline_code").str.strip_chars().alias("airline_code"),
@@ -264,12 +269,14 @@ def prepare_route_data(df):
     ])
     
     print(f"✓ Prepared {len(prepared_df)} routes for database insertion")
-    print(f"Data coverage:")
-    print(f"  - Total routes: {len(prepared_df)}")
-    print(f"  - Codeshare routes: {prepared_df.filter(pl.col('codeshare') == True).height}")
-    print(f"  - Direct routes: {prepared_df.filter(pl.col('stops') == 0).height}")
-    print(f"  - With equipment info: {prepared_df.filter(pl.col('equipment').is_not_null()).height}")
-    print(f"  - With airline IDs: {prepared_df.filter(pl.col('airline_id_openflights').is_not_null()).height}")
+    
+    if verbose:
+        print(f"Data coverage:")
+        print(f"  - Total routes: {len(prepared_df)}")
+        print(f"  - Codeshare routes: {prepared_df.filter(pl.col('codeshare') == True).height}")
+        print(f"  - Direct routes: {prepared_df.filter(pl.col('stops') == 0).height}")
+        print(f"  - With equipment info: {prepared_df.filter(pl.col('equipment').is_not_null()).height}")
+        print(f"  - With airline IDs: {prepared_df.filter(pl.col('airline_id_openflights').is_not_null()).height}")
     
     return prepared_df
 
@@ -300,7 +307,7 @@ def create_route_record(route_data):
     except Exception as e:
         return None, [f"Error creating record: {str(e)}"]
 
-def insert_routes_to_database(df):
+def insert_routes_to_database(df, verbose=False):
     """Insert route data into the database with proper transaction handling"""
     if not DEPENDENCIES_AVAILABLE:
         print("Dependencies not available for database operations")
@@ -327,7 +334,8 @@ def insert_routes_to_database(df):
             warning_count = 0
             batch_size = 1000  # Process in larger batches for routes
             
-            print(f"Processing {len(routes_data)} routes in batches of {batch_size}...")
+            if verbose:
+                print(f"Processing {len(routes_data)} routes in batches of {batch_size}...")
             
             # Process routes in batches for better transaction handling
             with tqdm(
@@ -352,7 +360,7 @@ def insert_routes_to_database(df):
                                 route, issues = create_route_record(route_data)
                                 
                                 if route is None:
-                                    if error_count < 10:  # Only show first 10 errors
+                                    if verbose and error_count < 10:  # Only show first 10 errors in verbose mode
                                         airline = route_data.get('airline_code', 'Unknown')
                                         source = route_data.get('source_airport_code', 'Unknown')
                                         dest = route_data.get('destination_airport_code', 'Unknown')
@@ -362,7 +370,7 @@ def insert_routes_to_database(df):
                                 
                                 if issues:  # These are warnings
                                     warning_count += len(issues)
-                                    if warning_count <= 10:  # Only show first 10 warnings
+                                    if verbose and warning_count <= 10:  # Only show first 10 warnings in verbose mode
                                         airline = route.airline_code
                                         source = route.source_airport_code
                                         dest = route.destination_airport_code
@@ -373,7 +381,7 @@ def insert_routes_to_database(df):
                                 batch_inserted += 1
                                 
                             except Exception as e:
-                                if batch_errors < 5:  # Only show first 5 errors per batch
+                                if verbose and batch_errors < 5:  # Only show first 5 errors per batch in verbose mode
                                     airline = route_data.get('airline_code', 'Unknown')
                                     source = route_data.get('source_airport_code', 'Unknown')
                                     dest = route_data.get('destination_airport_code', 'Unknown')
@@ -390,15 +398,17 @@ def insert_routes_to_database(df):
                         
                         # Update progress bar
                         pbar.update(len(batch_data))
-                        pbar.set_postfix({
-                            'Inserted': inserted_count,
-                            'Errors': error_count
-                        })
+                        if verbose:
+                            pbar.set_postfix({
+                                'Inserted': inserted_count,
+                                'Errors': error_count
+                            })
                             
                     except Exception as e:
                         # Rollback the entire batch on any error
                         session.rollback()
-                        print(f"✗ Batch transaction failed (routes {batch_start}-{batch_end}): {e}")
+                        if verbose:
+                            print(f"✗ Batch transaction failed (routes {batch_start}-{batch_end}): {e}")
                         error_count += len(batch_data)
                         pbar.update(len(batch_data))
                         continue
@@ -406,7 +416,8 @@ def insert_routes_to_database(df):
             print(f"✓ Database insertion completed!")
             print(f"- Inserted: {inserted_count} new routes")
             print(f"- Errors: {error_count} routes failed validation/insertion")
-            print(f"- Warnings: {warning_count} data quality warnings")
+            if verbose:
+                print(f"- Warnings: {warning_count} data quality warnings")
             
             return True
             
@@ -414,7 +425,7 @@ def insert_routes_to_database(df):
         print(f"✗ Database insertion failed: {e}")
         return False
 
-def show_database_stats():
+def show_database_stats(verbose=False):
     """Show statistics about routes in the database"""
     if not DEPENDENCIES_AVAILABLE:
         return
@@ -438,26 +449,33 @@ def show_database_stats():
             with_equipment = len([r for r in total_routes if r.equipment])
             
             print(f"📊 Database Statistics:")
-            print(f"  Total routes: {total:,}")
-            print(f"  Codeshare routes: {codeshare_routes:,}")
-            print(f"  Direct routes: {direct_routes:,}")
-            print(f"  With equipment info: {with_equipment:,}")
+            print(f"Total routes: {total:,}")
+            print(f"Codeshare routes: {codeshare_routes:,}")
+            print(f"Direct routes: {direct_routes:,}")
+            print(f"With equipment info: {with_equipment:,}")
             
-            # Show sample routes
-            sample_routes = session.exec(select(Route).limit(5)).all()
-            
-            print(f"\nSample routes:")
-            for route in sample_routes:
-                codeshare_display = " (Codeshare)" if route.codeshare else ""
-                stops_display = f" ({route.stops} stops)" if route.stops > 0 else " (Direct)"
-                equipment_display = f" [{route.equipment}]" if route.equipment else ""
-                print(f"  {route.airline_code}: {route.source_airport_code} → {route.destination_airport_code}{codeshare_display}{stops_display}{equipment_display}")
+            if verbose:
+                # Show sample routes
+                sample_routes = session.exec(select(Route).limit(5)).all()
+                
+                print(f"Sample routes:")
+                for route in sample_routes:
+                    codeshare_display = " (Codeshare)" if route.codeshare else ""
+                    stops_display = f" ({route.stops} stops)" if route.stops > 0 else " (Direct)"
+                    equipment_display = f" [{route.equipment}]" if route.equipment else ""
+                    print(f"{route.airline_code}: {route.source_airport_code} → {route.destination_airport_code}{codeshare_display}{stops_display}{equipment_display}")
                 
     except Exception as e:
         print(f"✗ Failed to get database statistics: {e}")
 
 def main():
     """Main function to download and import routes data"""
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description="Download and import routes data from OpenFlights.org")
+    parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose output")
+    parser.add_argument("--yes", action="store_true", help="Auto-confirm all prompts")
+    args = parser.parse_args()
+    
     if not DEPENDENCIES_AVAILABLE:
         print("Please install dependencies first: uv sync")
         return False
@@ -472,13 +490,14 @@ def main():
         print("You can still download and analyze data without database connection")
         
         # Offer to continue without database import
-        try:
-            response = input("\nContinue with download and analysis only? (y/N): ").strip().lower()
-            if response != 'y':
+        if not args.yes:
+            try:
+                response = input("\nContinue with download and analysis only? (y/N): ").strip().lower()
+                if response != 'y':
+                    return False
+            except KeyboardInterrupt:
+                print("\nOperation cancelled")
                 return False
-        except KeyboardInterrupt:
-            print("\nOperation cancelled")
-            return False
     
     # Step 1: Download data
     if not ROUTES_FILE.exists():
@@ -488,12 +507,12 @@ def main():
         print(f"✓ Routes data already exists: {ROUTES_FILE}")
     
     # Step 2: Analyze data
-    df = analyze_routes_data()
+    df = analyze_routes_data(verbose=args.verbose)
     if df is None:
         return False
     
     # Step 3: Prepare data
-    prepared_df = prepare_route_data(df)
+    prepared_df = prepare_route_data(df, verbose=args.verbose)
     if len(prepared_df) == 0:
         print("✗ No suitable route data found")
         return False
@@ -503,25 +522,27 @@ def main():
         print(f"\nFound {len(prepared_df):,} routes ready for import")
         
         # Ask user what to do
-        print("What would you like to do?")
-        print("  y = Import routes into database")
-        print("  s = Show current database statistics only")
-        
-        choice = input("\nChoice (y/s): ").strip().lower()
+        if args.yes:
+            choice = 'y'
+        else:
+            print("What would you like to do?")
+            print("y = Import routes into database")
+            print("s = Show current database statistics only")
+            choice = input("\nChoice (y/s): ").strip().lower()
         
         if choice == 's':
-            show_database_stats()
+            show_database_stats(verbose=args.verbose)
             return True
         elif choice == 'y':
             print("Importing routes into database...")
-            if not insert_routes_to_database(prepared_df):
+            if not insert_routes_to_database(prepared_df, verbose=args.verbose):
                 return False
             print("\n" + "=" * 50)
-            show_database_stats()
+            show_database_stats(verbose=args.verbose)
             print("\n🎉 Routes data import completed successfully!")
         else:
             print("Invalid choice. Showing statistics only.")
-            show_database_stats()
+            show_database_stats(verbose=args.verbose)
     else:
         print(f"\n✓ Data analysis completed! {len(prepared_df)} routes ready for import")
         print("Configure .env file and run again to import into database")

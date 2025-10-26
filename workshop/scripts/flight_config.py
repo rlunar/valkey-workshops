@@ -11,12 +11,14 @@ from typing import Dict, List, Tuple, Any
 class FlightConfig:
     """Configuration for flight population based on docs/flight_rules.md"""
     
-    # Airport tiers based on route count (from flight rules)
+    # Airport tiers based on route count (from updated flight rules)
     AIRPORT_TIERS = {
         'tier_1_major_hub': {
             'min_routes': 500,
             'name': 'Major Hub Airport',
-            'daily_flights_range': (6, 12),
+            'short_haul_daily': (8, 15),    # 0-1,500km
+            'medium_haul_daily': (4, 8),    # 1,500-4,000km  
+            'long_haul_daily': (1, 3),      # 4,000+km
             'peak_hours_weight': 0.7,
             'weekend_multiplier': 0.9,
             'seasonal_boost': 1.3,
@@ -25,7 +27,9 @@ class FlightConfig:
         'tier_2_regional_hub': {
             'min_routes': 200,
             'name': 'Regional Hub Airport', 
-            'daily_flights_range': (2, 6),
+            'short_haul_daily': (4, 8),     # 0-1,500km
+            'medium_haul_daily': (2, 4),    # 1,500-4,000km
+            'long_haul_weekly': (3, 7),     # 4,000+km (weekly)
             'peak_hours_weight': 0.6,
             'weekend_multiplier': 0.85,
             'seasonal_boost': 1.2,
@@ -34,7 +38,9 @@ class FlightConfig:
         'tier_3_secondary': {
             'min_routes': 50,
             'name': 'Secondary Airport',
-            'daily_flights_range': (1, 3),
+            'short_haul_daily': (2, 4),     # 0-1,500km
+            'medium_haul_daily': (1, 2),    # 1,500-4,000km
+            'long_haul_weekly': (3, 5),     # 4,000+km (seasonal)
             'peak_hours_weight': 0.5,
             'weekend_multiplier': 0.8,
             'seasonal_boost': 1.15,
@@ -43,7 +49,8 @@ class FlightConfig:
         'tier_4_regional': {
             'min_routes': 10,
             'name': 'Regional Airport',
-            'daily_flights_range': (0.4, 1.0),  # 3-7 flights per week
+            'short_haul_weekly': (3, 7),    # 0-1,500km (weekly)
+            'medium_haul_weekly': (2, 4),   # 1,500-4,000km (weekly)
             'peak_hours_weight': 0.4,
             'weekend_multiplier': 0.6,
             'seasonal_boost': 1.1,
@@ -52,7 +59,7 @@ class FlightConfig:
         'tier_5_local': {
             'min_routes': 0,
             'name': 'Local Airport',
-            'daily_flights_range': (0.1, 0.4),  # 1-3 flights per week
+            'short_haul_weekly': (1, 3),    # 0-1,500km only (weekly)
             'peak_hours_weight': 0.3,
             'weekend_multiplier': 0.4,
             'seasonal_boost': 1.05,
@@ -97,25 +104,43 @@ class FlightConfig:
         6: 1.0   # Sunday - return travel
     }
     
-    # Aircraft selection by route characteristics
-    AIRCRAFT_CATEGORIES = {
-        'wide_body': {
-            'capacity_range': (250, 500),
-            'use_cases': ['long_haul', 'high_demand', 'international_hub'],
-            'min_distance_km': 3000,
-            'min_daily_passengers': 300
+    # Aircraft selection by distance (from flight rules)
+    AIRCRAFT_DISTANCE_RULES = {
+        'regional_turboprop': {
+            'distance_range': (0, 800),
+            'capacity_range': (30, 80),
+            'aircraft_types': ['ATR series', 'Dash 8', 'Saab 340'],
+            'description': 'Regional jets and turboprops for short runways'
+        },
+        'regional_jet': {
+            'distance_range': (0, 800), 
+            'capacity_range': (50, 120),
+            'aircraft_types': ['CRJ series', 'ERJ series'],
+            'description': 'Regional jets for short-haul routes'
         },
         'narrow_body': {
-            'capacity_range': (120, 250), 
-            'use_cases': ['medium_haul', 'domestic_trunk', 'regional_hub'],
-            'min_distance_km': 500,
-            'min_daily_passengers': 150
+            'distance_range': (800, 2500),
+            'capacity_range': (120, 200),
+            'aircraft_types': ['A320 family', 'B737 series'],
+            'description': 'Narrow-body aircraft for medium-haul'
         },
-        'regional': {
-            'capacity_range': (50, 120),
-            'use_cases': ['short_haul', 'regional', 'low_demand'],
-            'min_distance_km': 0,
-            'min_daily_passengers': 0
+        'large_narrow_body': {
+            'distance_range': (2500, 5500),
+            'capacity_range': (150, 250),
+            'aircraft_types': ['A321', 'B737 MAX', 'B757'],
+            'description': 'Large narrow-body or small wide-body'
+        },
+        'wide_body': {
+            'distance_range': (5500, 8000),
+            'capacity_range': (250, 400),
+            'aircraft_types': ['A330', 'A340', 'A350', 'B777', 'B787'],
+            'description': 'Wide-body aircraft for long-haul'
+        },
+        'ultra_long_range': {
+            'distance_range': (8000, 20000),
+            'capacity_range': (280, 500),
+            'aircraft_types': ['A350-900ULR', 'B777-200LR', 'B747'],
+            'description': 'Ultra-long-range wide-body aircraft'
         }
     }
     
@@ -170,14 +195,27 @@ class FlightConfig:
         return cls.AIRLINE_PATTERNS.get(airline_code, cls.AIRLINE_PATTERNS['default'])
     
     @classmethod
-    def get_aircraft_category(cls, distance_km: float, daily_passengers: int) -> str:
-        """Determine appropriate aircraft category"""
-        for category, config in cls.AIRCRAFT_CATEGORIES.items():
-            if (distance_km >= config['min_distance_km'] and 
-                daily_passengers >= config['min_daily_passengers']):
-                return category
+    def get_aircraft_category_by_distance(cls, distance_km: float) -> Dict[str, Any]:
+        """Determine appropriate aircraft category based on distance rules"""
+        for category, config in cls.AIRCRAFT_DISTANCE_RULES.items():
+            min_dist, max_dist = config['distance_range']
+            if min_dist <= distance_km <= max_dist:
+                return {
+                    'category': category,
+                    **config
+                }
         
-        return 'regional'  # Default fallback
+        # Fallback for very long distances
+        return {
+            'category': 'ultra_long_range',
+            **cls.AIRCRAFT_DISTANCE_RULES['ultra_long_range']
+        }
+    
+    @classmethod
+    def get_aircraft_category(cls, distance_km: float, daily_passengers: int) -> str:
+        """Determine appropriate aircraft category (legacy method)"""
+        category_info = cls.get_aircraft_category_by_distance(distance_km)
+        return category_info['category']
     
     @classmethod
     def estimate_flight_duration_minutes(cls, distance_km: float) -> int:
@@ -201,18 +239,40 @@ class FlightConfig:
         for tier_name, config in cls.AIRPORT_TIERS.items():
             print(f"  {config['name']}:")
             print(f"    Min routes: {config['min_routes']}")
-            print(f"    Daily flights: {config['daily_flights_range'][0]}-{config['daily_flights_range'][1]}")
+            
+            # Print distance-specific frequencies
+            if 'short_haul_daily' in config:
+                short_range = config['short_haul_daily']
+                print(f"    Short-haul daily: {short_range[0]}-{short_range[1]}")
+            if 'medium_haul_daily' in config:
+                medium_range = config['medium_haul_daily']
+                print(f"    Medium-haul daily: {medium_range[0]}-{medium_range[1]}")
+            if 'long_haul_daily' in config:
+                long_range = config['long_haul_daily']
+                print(f"    Long-haul daily: {long_range[0]}-{long_range[1]}")
+            if 'short_haul_weekly' in config:
+                short_weekly = config['short_haul_weekly']
+                print(f"    Short-haul weekly: {short_weekly[0]}-{short_weekly[1]}")
+            if 'medium_haul_weekly' in config:
+                medium_weekly = config['medium_haul_weekly']
+                print(f"    Medium-haul weekly: {medium_weekly[0]}-{medium_weekly[1]}")
+            if 'long_haul_weekly' in config:
+                long_weekly = config['long_haul_weekly']
+                print(f"    Long-haul weekly: {long_weekly[0]}-{long_weekly[1]}")
+            
             print(f"    Seasonal boost: {config['seasonal_boost']}x")
         
         print(f"\nSeasonal Multipliers:")
         for season, mult in cls.SEASONAL_MULTIPLIERS.items():
             print(f"  {season.capitalize()}: {mult}x")
         
-        print(f"\nAircraft Categories:")
-        for category, config in cls.AIRCRAFT_CATEGORIES.items():
+        print(f"\nAircraft Distance Rules:")
+        for category, config in cls.AIRCRAFT_DISTANCE_RULES.items():
             print(f"  {category.replace('_', ' ').title()}:")
-            print(f"    Capacity: {config['capacity_range'][0]}-{config['capacity_range'][1]} seats")
-            print(f"    Min distance: {config['min_distance_km']} km")
+            dist_range = config['distance_range']
+            cap_range = config['capacity_range']
+            print(f"    Distance: {dist_range[0]}-{dist_range[1]} km")
+            print(f"    Capacity: {cap_range[0]}-{cap_range[1]} seats")
         
         print(f"\nTime Slots:")
         print(f"  Peak hours: {cls.PEAK_HOURS}")

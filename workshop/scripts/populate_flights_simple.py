@@ -33,8 +33,9 @@ except ImportError as e:
 class SimpleFlightPopulator:
     """Generate flights based on route data and flight rules"""
     
-    def __init__(self, db_manager: DatabaseManager):
+    def __init__(self, db_manager: DatabaseManager, verbose: bool = False):
         self.db_manager = db_manager
+        self.verbose = verbose
         
         # Common departure times (24-hour format)
         self.departure_times = [
@@ -61,7 +62,8 @@ class SimpleFlightPopulator:
     
     def get_route_counts_by_airport(self, session: Session) -> Dict[str, int]:
         """Get route counts for each airport"""
-        print("Calculating airport route counts...")
+        if self.verbose:
+            print("Calculating airport route counts...")
         
         # Count outbound routes
         outbound_query = (
@@ -87,7 +89,8 @@ class SimpleFlightPopulator:
         for airport_code, count in session.exec(inbound_query).all():
             route_counts[airport_code] = route_counts.get(airport_code, 0) + count
         
-        print(f"Found route counts for {len(route_counts)} airports")
+        if self.verbose:
+            print(f"Found route counts for {len(route_counts)} airports")
         return route_counts
     
     def get_sample_routes(self, session: Session, limit: int = 1000) -> List[Dict[str, Any]]:
@@ -238,11 +241,13 @@ class SimpleFlightPopulator:
             print("Dependencies not available")
             return 0
         
-        print(f"Populating flights from {start_date.date()} to {end_date.date()}")
+        if self.verbose:
+            print(f"Populating flights from {start_date.date()} to {end_date.date()}")
         
         with Session(self.db_manager.engine) as session:
             # Get required data
-            print("Loading reference data...")
+            if self.verbose:
+                print("Loading reference data...")
             route_counts = self.get_route_counts_by_airport(session)
             routes = self.get_sample_routes(session, max_routes_per_day)
             airport_ids = self.get_airport_ids(session)
@@ -253,12 +258,31 @@ class SimpleFlightPopulator:
                 print("❌ No aircraft found in database")
                 return 0
             
-            print(f"Processing {len(routes)} routes")
-            print(f"Found {len(airport_ids)} airports with IATA codes")
-            print(f"Found {len(airline_ids)} airlines with IATA codes")
+            if self.verbose:
+                print(f"Processing {len(routes)} routes")
+                print(f"Found {len(airport_ids)} airports with IATA codes")
+                print(f"Found {len(airline_ids)} airlines with IATA codes")
             
             total_flights = 0
             current_date = start_date
+            total_days = (end_date - start_date).days + 1
+            
+            # Import tqdm for progress bar
+            try:
+                from tqdm import tqdm
+                use_progress_bar = not self.verbose
+            except ImportError:
+                use_progress_bar = False
+            
+            # Create progress bar if not verbose
+            if use_progress_bar:
+                pbar = tqdm(
+                    total=total_days,
+                    desc="🛫 Generating flights",
+                    unit="day",
+                    colour='blue',
+                    bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} days ({percentage:3.0f}%) [{elapsed}<{remaining}] {postfix}'
+                )
             
             while current_date <= end_date:
                 daily_flights = []
@@ -279,17 +303,38 @@ class SimpleFlightPopulator:
                     session.commit()
                     total_flights += len(daily_flights)
                 
-                if current_date.day == 1:  # Progress update monthly
+                # Update progress
+                if use_progress_bar:
+                    pbar.update(1)
+                    pbar.set_postfix({
+                        'Flights': f"{total_flights:,}",
+                        'Today': len(daily_flights)
+                    })
+                elif self.verbose and current_date.day == 1:  # Progress update monthly
                     print(f"Processed {current_date.strftime('%Y-%m')}: {total_flights:,} flights so far")
                 
                 current_date += timedelta(days=1)
             
-            print(f"✅ Created {total_flights:,} flights")
+            if use_progress_bar:
+                pbar.close()
+            
+            if self.verbose:
+                print(f"✅ Created {total_flights:,} flights")
             return total_flights
 
 
 def main():
     """Main function"""
+    import argparse
+    
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='Simple Flight Population Script')
+    parser.add_argument('--verbose', '-v', action='store_true', 
+                       help='Enable verbose output (default: progress bar only)')
+    parser.add_argument('--yes', '-y', action='store_true',
+                       help='Auto-confirm generation without prompting')
+    args = parser.parse_args()
+    
     if not DEPENDENCIES_AVAILABLE:
         return 1
     
@@ -300,39 +345,52 @@ def main():
     
     load_dotenv()
     
-    print("Simple Flight Population Script")
-    print("=" * 35)
+    if args.verbose:
+        print("Simple Flight Population Script")
+        print("=" * 35)
     
     # Initialize
     db_manager = DatabaseManager()
-    populator = SimpleFlightPopulator(db_manager)
+    populator = SimpleFlightPopulator(db_manager, verbose=args.verbose)
     
     # Define date range
     today = datetime.now()
     start_date = datetime(today.year - 1, 1, 1)  # Last year
     end_date = datetime(today.year + 1, 12, 31)  # Next year
     
-    print(f"Date range: {start_date.date()} to {end_date.date()}")
-    print(f"Total days: {(end_date - start_date).days + 1}")
+    if args.verbose:
+        print(f"Date range: {start_date.date()} to {end_date.date()}")
+        print(f"Total days: {(end_date - start_date).days + 1}")
     
     # Confirmation
-    response = input("\nGenerate flights for 2-year period? This may take several minutes. (y/N): ")
-    if response.lower() != 'y':
-        print("Operation cancelled.")
-        return 0
+    if not args.yes:
+        if args.verbose:
+            response = input("\nGenerate flights for 2-year period? This may take several minutes. (y/N): ")
+        else:
+            response = input("Generate flights? (y/N): ")
+        if response.lower() != 'y':
+            if args.verbose:
+                print("Operation cancelled.")
+            return 0
     
     try:
         flights_created = populator.populate_flights(start_date, end_date)
         
         if flights_created > 0:
-            print(f"\n🎉 Successfully created {flights_created:,} flights!")
+            if args.verbose:
+                print(f"\n🎉 Successfully created {flights_created:,} flights!")
+            else:
+                print(f"✅ Created {flights_created:,} flights!")
         else:
-            print("\n⚠ No flights were created. Check your data.")
+            print("⚠ No flights were created. Check your data.")
         
         return 0
         
     except Exception as e:
-        print(f"\n❌ Error: {e}")
+        print(f"❌ Error: {e}")
+        if args.verbose:
+            import traceback
+            traceback.print_exc()
         return 1
 
 

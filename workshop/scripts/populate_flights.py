@@ -30,8 +30,9 @@ from models.city import City, CityAirportRelation
 class FlightPopulator:
     """Generate realistic flight schedules based on route data and flight rules"""
     
-    def __init__(self, db_manager: DatabaseManager):
+    def __init__(self, db_manager: DatabaseManager, verbose: bool = False):
         self.db_manager = db_manager
+        self.verbose = verbose
         
         # Flight timing patterns (24-hour format)
         self.peak_hours = [7, 8, 9, 12, 13, 17, 18, 19, 20]
@@ -205,7 +206,8 @@ class FlightPopulator:
                                       batch_size: int = 1000) -> int:
         """Populate flights for a specific date range"""
         
-        print(f"Populating flights from {start_date.date()} to {end_date.date()}")
+        if self.verbose:
+            print(f"Populating flights from {start_date.date()} to {end_date.date()}")
         
         with Session(self.db_manager.engine) as session:
             # Get all routes with airport and airline information
@@ -234,7 +236,8 @@ class FlightPopulator:
                 print("No routes found with complete airport and airline data")
                 return 0
             
-            print(f"Found {len(routes_data)} routes to process")
+            if self.verbose:
+                print(f"Found {len(routes_data)} routes to process")
             
             # Get airport route counts for tier determination
             airport_route_counts = {}
@@ -247,6 +250,24 @@ class FlightPopulator:
             
             flights_created = 0
             current_date = start_date
+            total_days = (end_date - start_date).days + 1
+            
+            # Import tqdm for progress bar
+            try:
+                from tqdm import tqdm
+                use_progress_bar = not self.verbose
+            except ImportError:
+                use_progress_bar = False
+            
+            # Create progress bar if not verbose
+            if use_progress_bar:
+                pbar = tqdm(
+                    total=total_days,
+                    desc="🛫 Generating flights",
+                    unit="day",
+                    colour='blue',
+                    bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} days ({percentage:3.0f}%) [{elapsed}<{remaining}] {postfix}'
+                )
             
             while current_date <= end_date:
                 daily_flights = []
@@ -342,12 +363,24 @@ class FlightPopulator:
                     session.commit()
                     flights_created += len(daily_flights)
                     
-                    if flights_created % batch_size == 0:
+                    if self.verbose and flights_created % batch_size == 0:
                         print(f"Created {flights_created:,} flights (Date: {current_date.date()})")
+                
+                # Update progress
+                if use_progress_bar:
+                    pbar.update(1)
+                    pbar.set_postfix({
+                        'Flights': f"{flights_created:,}",
+                        'Today': len(daily_flights)
+                    })
                 
                 current_date += timedelta(days=1)
             
-            print(f"Total flights created: {flights_created:,}")
+            if use_progress_bar:
+                pbar.close()
+            
+            if self.verbose:
+                print(f"Total flights created: {flights_created:,}")
             return flights_created
     
     def clear_existing_flights(self, start_date: datetime, end_date: datetime) -> int:
@@ -361,11 +394,34 @@ class FlightPopulator:
             existing_flights = session.exec(delete_query).all()
             count = len(existing_flights)
             
-            for flight in existing_flights:
-                session.delete(flight)
+            if count > 0:
+                # Import tqdm for progress bar
+                try:
+                    from tqdm import tqdm
+                    use_progress_bar = not self.verbose and count > 1000
+                except ImportError:
+                    use_progress_bar = False
+                
+                if use_progress_bar:
+                    pbar = tqdm(
+                        existing_flights,
+                        desc="🗑️  Clearing flights",
+                        unit="flight",
+                        colour='red',
+                        bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} ({percentage:3.0f}%) [{elapsed}<{remaining}]'
+                    )
+                    for flight in pbar:
+                        session.delete(flight)
+                    pbar.close()
+                else:
+                    for flight in existing_flights:
+                        session.delete(flight)
+                
+                session.commit()
+                
+                if self.verbose:
+                    print(f"Cleared {count:,} existing flights in date range")
             
-            session.commit()
-            print(f"Cleared {count:,} existing flights in date range")
             return count
     
     def get_database_stats(self) -> Dict[str, int]:
@@ -384,65 +440,94 @@ class FlightPopulator:
 
 def main():
     """Main function to populate flights"""
-    print("Flight Population Script")
-    print("=" * 30)
+    import argparse
+    
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='Flight Population Script')
+    parser.add_argument('--verbose', '-v', action='store_true', 
+                       help='Enable verbose output (default: progress bar only)')
+    parser.add_argument('--reset-db', action='store_true',
+                       help='Reset database without prompting')
+    parser.add_argument('--no-reset', action='store_true',
+                       help='Keep existing data without prompting')
+    args = parser.parse_args()
+    
+    if args.verbose:
+        print("Flight Population Script")
+        print("=" * 30)
     
     # Initialize database manager
     db_manager = DatabaseManager()
-    populator = FlightPopulator(db_manager)
+    populator = FlightPopulator(db_manager, verbose=args.verbose)
     
     # Get current database stats
-    print("Current Database Statistics:")
-    stats = populator.get_database_stats()
-    for key, value in stats.items():
-        print(f"  {key.capitalize()}: {value:,}")
-    
-    if stats['routes'] == 0:
-        print("\n❌ No routes found in database. Please import route data first.")
-        return 1
-    
-    if stats['aircraft'] == 0:
-        print("\n❌ No aircraft found in database. Please import aircraft data first.")
-        return 1
+    if args.verbose:
+        print("Current Database Statistics:")
+        stats = populator.get_database_stats()
+        for key, value in stats.items():
+            print(f"  {key.capitalize()}: {value:,}")
+        
+        if stats['routes'] == 0:
+            print("\n❌ No routes found in database. Please import route data first.")
+            return 1
+        
+        if stats['aircraft'] == 0:
+            print("\n❌ No aircraft found in database. Please import aircraft data first.")
+            return 1
     
     # Define date range: last year + upcoming year
     today = datetime.now()
     start_date = datetime(today.year - 1, 1, 1)
     end_date = datetime(today.year + 1, 12, 31)
     
-    print(f"\nGenerating flights for: {start_date.date()} to {end_date.date()}")
-    print(f"Total days: {(end_date - start_date).days + 1}")
+    if args.verbose:
+        print(f"\nGenerating flights for: {start_date.date()} to {end_date.date()}")
+        print(f"Total days: {(end_date - start_date).days + 1}")
     
-    # Ask for confirmation
-    response = input("\nThis will generate a large number of flights. Continue? (y/N): ")
-    if response.lower() != 'y':
-        print("Operation cancelled.")
-        return 0
+    # Handle database reset
+    reset_db = False
+    if args.reset_db:
+        reset_db = True
+    elif args.no_reset:
+        reset_db = False
+    else:
+        # Only ask about database reset
+        response = input("Reset existing flight data? (y/N): ")
+        reset_db = response.lower() == 'y'
     
-    # Clear existing flights in range
-    print("\nClearing existing flights in date range...")
-    cleared_count = populator.clear_existing_flights(start_date, end_date)
-    
-    # Populate flights
-    print("\nStarting flight population...")
     try:
+        cleared_count = 0
+        if reset_db:
+            if args.verbose:
+                print("\nClearing existing flights in date range...")
+            cleared_count = populator.clear_existing_flights(start_date, end_date)
+        
+        # Populate flights
+        if args.verbose:
+            print("\nStarting flight population...")
         flights_created = populator.populate_flights_for_date_range(start_date, end_date)
         
-        print(f"\n✅ Flight population completed successfully!")
-        print(f"   Flights created: {flights_created:,}")
-        print(f"   Flights cleared: {cleared_count:,}")
-        print(f"   Net change: {flights_created - cleared_count:,}")
-        
-        # Final stats
-        print("\nFinal Database Statistics:")
-        final_stats = populator.get_database_stats()
-        for key, value in final_stats.items():
-            print(f"  {key.capitalize()}: {value:,}")
+        print(f"✅ Flight population completed successfully!")
+        if args.verbose:
+            print(f"   Flights created: {flights_created:,}")
+            print(f"   Flights cleared: {cleared_count:,}")
+            print(f"   Net change: {flights_created - cleared_count:,}")
+            
+            # Final stats
+            print("\nFinal Database Statistics:")
+            final_stats = populator.get_database_stats()
+            for key, value in final_stats.items():
+                print(f"  {key.capitalize()}: {value:,}")
+        else:
+            print(f"   Created {flights_created:,} flights")
         
         return 0
         
     except Exception as e:
         print(f"\n❌ Error during flight population: {e}")
+        if args.verbose:
+            import traceback
+            traceback.print_exc()
         return 1
 
 

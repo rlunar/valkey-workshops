@@ -385,73 +385,139 @@ def show_database_stats():
 
 def main():
     """Main function to download and import aircraft data"""
+    import argparse
+    
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='Download and import aircraft data from OpenFlights.org')
+    parser.add_argument('--verbose', '-v', action='store_true', 
+                       help='Enable verbose output (default: progress bar only)')
+    parser.add_argument('--yes', '-y', action='store_true',
+                       help='Auto-confirm import without prompting')
+    args = parser.parse_args()
+    
     if not DEPENDENCIES_AVAILABLE:
         print("Please install dependencies first: uv sync")
         return False
     
-    print("✈️  OpenFlights Aircraft Data Import")
-    print("=" * 40)
+    if args.verbose:
+        print("✈️  OpenFlights Aircraft Data Import")
+        print("=" * 40)
     
     # Check if .env file exists
     if not os.path.exists('.env'):
-        print("⚠ .env file not found")
-        print("Copy .env.example to .env and configure your database settings")
-        print("You can still download and analyze data without database connection")
+        if args.verbose:
+            print("⚠ .env file not found")
+            print("Copy .env.example to .env and configure your database settings")
+            print("You can still download and analyze data without database connection")
         
-        # Offer to continue without database import
-        try:
-            response = input("\nContinue with download and analysis only? (y/N): ").strip().lower()
-            if response != 'y':
+        if not args.yes:
+            # Offer to continue without database import
+            try:
+                response = input("\nContinue with download and analysis only? (y/N): ").strip().lower()
+                if response != 'y':
+                    return False
+            except KeyboardInterrupt:
+                print("\nOperation cancelled")
                 return False
-        except KeyboardInterrupt:
-            print("\nOperation cancelled")
-            return False
     
     # Step 1: Download data
     if not PLANES_FILE.exists():
         if not download_planes_data():
             return False
     else:
-        print(f"✓ Aircraft data already exists: {PLANES_FILE}")
+        if args.verbose:
+            print(f"✓ Aircraft data already exists: {PLANES_FILE}")
     
     # Step 2: Analyze data
-    df = analyze_planes_data()
+    if args.verbose:
+        df = analyze_planes_data()
+    else:
+        # Silent analysis for non-verbose mode
+        try:
+            column_names = ["name", "iata", "icao"]
+            df = pl.read_csv(
+                PLANES_FILE,
+                has_header=False,
+                new_columns=column_names,
+                null_values=["\\N", ""],
+                encoding="utf8"
+            )
+        except Exception as e:
+            print(f"❌ Failed to analyze aircraft data: {e}")
+            return False
+    
     if df is None:
         return False
     
     # Step 3: Prepare data
-    prepared_df = prepare_airplane_type_data(df)
+    if args.verbose:
+        prepared_df = prepare_airplane_type_data(df)
+    else:
+        # Silent preparation for non-verbose mode
+        prepared_df = df.select([
+            pl.col("name").str.strip_chars().alias("name"),
+            pl.col("iata").str.strip_chars().alias("iata"),
+            pl.col("icao").str.strip_chars().alias("icao")
+        ]).filter(
+            (pl.col("name").is_not_null()) &
+            (pl.col("name") != "") &
+            (pl.col("name").str.len_chars() <= 200)
+        )
+    
     if len(prepared_df) == 0:
-        print("✗ No suitable aircraft data found")
+        print("❌ No suitable aircraft data found")
         return False
     
     # Step 4: Insert into database (if .env exists)
     if os.path.exists('.env'):
-        print(f"\nFound {len(prepared_df):,} aircraft types ready for import")
+        if args.verbose:
+            print(f"\nFound {len(prepared_df):,} aircraft types ready for import")
         
-        # Ask user what to do
-        print("What would you like to do?")
-        print("  y = Import aircraft types into database")
-        print("  s = Show current database statistics only")
-        
-        choice = input("\nChoice (y/s): ").strip().lower()
-        
-        if choice == 's':
-            show_database_stats()
-            return True
-        elif choice == 'y':
-            print("Importing aircraft types into database...")
+        if args.yes:
+            # Auto-import
+            if args.verbose:
+                print("Importing aircraft types into database...")
             if not insert_airplane_types_to_database(prepared_df):
                 return False
+        else:
+            # Ask user what to do
+            if args.verbose:
+                print("What would you like to do?")
+                print("  y = Import aircraft types into database")
+                print("  s = Show current database statistics only")
+                
+                choice = input("\nChoice (y/s): ").strip().lower()
+            else:
+                choice = input("Import aircraft types into database? (y/N): ").strip().lower()
+            
+            if choice == 's' and args.verbose:
+                show_database_stats()
+                return True
+            elif choice == 'y':
+                if args.verbose:
+                    print("Importing aircraft types into database...")
+                if not insert_airplane_types_to_database(prepared_df):
+                    return False
+            else:
+                if args.verbose:
+                    print("Invalid choice. Showing statistics only.")
+                    show_database_stats()
+                else:
+                    print("Operation cancelled")
+                return True
+        
+        if args.verbose:
             print("\n" + "=" * 50)
             show_database_stats()
             print("\n🎉 Aircraft data import completed successfully!")
         else:
-            print("Invalid choice. Showing statistics only.")
-            show_database_stats()
+            print("✅ Aircraft types imported successfully!")
     else:
-        print(f"\n✓ Data analysis completed! {len(prepared_df)} aircraft types ready for import")
-        print("Configure .env file and run again to import into database")
+        if args.verbose:
+            print(f"\n✓ Data analysis completed! {len(prepared_df)} aircraft types ready for import")
+            print("Configure .env file and run again to import into database")
+        else:
+            print("❌ .env file not found - configure database settings")
     
     return True
 

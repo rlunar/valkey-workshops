@@ -34,8 +34,9 @@ except ImportError as e:
 class AircraftPopulator:
     """Generate realistic aircraft fleets for airlines based on airplane types and airline characteristics"""
     
-    def __init__(self, db_manager: DatabaseManager):
+    def __init__(self, db_manager: DatabaseManager, verbose: bool = False):
         self.db_manager = db_manager
+        self.verbose = verbose
         
         # Common aircraft capacity mappings (approximate)
         self.aircraft_capacities = {
@@ -252,12 +253,13 @@ class AircraftPopulator:
         aircraft_list = []
         categorized_types = self.categorize_aircraft_types(airplane_types)
         
-        print(f"Generating aircraft fleets per airline...")
-        print(f"Airlines: {len(airlines)}")
-        print(f"Aircraft categories: Wide-body: {len(categorized_types['wide_body'])}, "
-              f"Narrow-body: {len(categorized_types['narrow_body'])}, "
-              f"Regional: {len(categorized_types['regional'])}, "
-              f"Small: {len(categorized_types['small'])}")
+        if self.verbose:
+            print(f"Generating aircraft fleets per airline...")
+            print(f"Airlines: {len(airlines)}")
+            print(f"Aircraft categories: Wide-body: {len(categorized_types['wide_body'])}, "
+                  f"Narrow-body: {len(categorized_types['narrow_body'])}, "
+                  f"Regional: {len(categorized_types['regional'])}, "
+                  f"Small: {len(categorized_types['small'])}")
         
         fleet_summary = {}
         
@@ -318,22 +320,23 @@ class AircraftPopulator:
                 })
         
         # Print fleet summary for top airlines
-        print(f"\nGenerated fleets for {len(airlines)} airlines:")
-        sorted_airlines = sorted(fleet_summary.items(), key=lambda x: x[1]['total'], reverse=True)
-        for airline_name, summary in sorted_airlines[:10]:  # Show top 10
-            print(f"  {airline_name}: {summary['total']} aircraft "
-                  f"(W:{summary['profile']['wide_body']}, "
-                  f"N:{summary['profile']['narrow_body']}, "
-                  f"R:{summary['profile']['regional']}, "
-                  f"S:{summary['profile']['small']})")
-        
-        if len(sorted_airlines) > 10:
-            print(f"  ... and {len(sorted_airlines) - 10} more airlines")
-        
-        print(f"\nTotal aircraft generated: {len(aircraft_list)}")
+        if self.verbose:
+            print(f"\nGenerated fleets for {len(airlines)} airlines:")
+            sorted_airlines = sorted(fleet_summary.items(), key=lambda x: x[1]['total'], reverse=True)
+            for airline_name, summary in sorted_airlines[:10]:  # Show top 10
+                print(f"  {airline_name}: {summary['total']} aircraft "
+                      f"(W:{summary['profile']['wide_body']}, "
+                      f"N:{summary['profile']['narrow_body']}, "
+                      f"R:{summary['profile']['regional']}, "
+                      f"S:{summary['profile']['small']})")
+            
+            if len(sorted_airlines) > 10:
+                print(f"  ... and {len(sorted_airlines) - 10} more airlines")
+            
+            print(f"\nTotal aircraft generated: {len(aircraft_list)}")
         return aircraft_list
     
-    def populate_aircraft(self, fleet_size_multiplier: float = 1.0, batch_size: int = 1000) -> int:
+    def populate_aircraft(self, fleet_size_multiplier: float = 1.0, batch_size: int = 1000, reset_db: bool = False) -> int:
         """Populate aircraft table with generated aircraft fleets per airline"""
         
         if not DEPENDENCIES_AVAILABLE:
@@ -355,14 +358,14 @@ class AircraftPopulator:
             
             # Check existing aircraft
             existing_count = session.exec(select(func.count(Airplane.airplane_id))).first()
-            print(f"Existing aircraft: {existing_count}")
+            if self.verbose:
+                print(f"Existing aircraft: {existing_count}")
             
-            if existing_count > 0:
-                response = input(f"Found {existing_count} existing aircraft. Clear and regenerate? (y/N): ")
-                if response.lower() == 'y':
-                    # Clear existing aircraft with progress tracking
-                    existing_aircraft = session.exec(select(Airplane)).all()
-                    
+            if existing_count > 0 and reset_db:
+                # Clear existing aircraft with progress tracking
+                existing_aircraft = session.exec(select(Airplane)).all()
+                
+                if self.verbose or existing_count > 1000:
                     with tqdm(
                         existing_aircraft,
                         desc="🗑️  Clearing aircraft",
@@ -372,12 +375,17 @@ class AircraftPopulator:
                     ) as pbar:
                         for aircraft in pbar:
                             session.delete(aircraft)
-                    
-                    session.commit()
-                    print(f"Cleared {existing_count} existing aircraft")
                 else:
+                    for aircraft in existing_aircraft:
+                        session.delete(aircraft)
+                
+                session.commit()
+                if self.verbose:
+                    print(f"Cleared {existing_count} existing aircraft")
+            elif existing_count > 0:
+                if self.verbose:
                     print("Keeping existing aircraft")
-                    return existing_count
+                return existing_count
             
             # Generate new aircraft fleets
             aircraft_list = self.generate_aircraft_fleet(airplane_types, airlines, fleet_size_multiplier)
@@ -409,10 +417,11 @@ class AircraftPopulator:
                         'Batch': f"{len(batch)}"
                     })
             
-            print(f"✅ Successfully populated {total_inserted:,} aircraft")
-            
-            # Show sample aircraft by category and airline
-            self.show_aircraft_summary(session)
+            if self.verbose:
+                print(f"✅ Successfully populated {total_inserted:,} aircraft")
+                
+                # Show sample aircraft by category and airline
+                self.show_aircraft_summary(session)
             
             return total_inserted
     
@@ -501,6 +510,20 @@ class AircraftPopulator:
 
 def main():
     """Main function"""
+    import argparse
+    
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='Aircraft Population Script')
+    parser.add_argument('--verbose', '-v', action='store_true', 
+                       help='Enable verbose output (default: progress bar only)')
+    parser.add_argument('--reset-db', action='store_true',
+                       help='Reset database without prompting')
+    parser.add_argument('--no-reset', action='store_true',
+                       help='Keep existing data without prompting')
+    parser.add_argument('--fleet-multiplier', type=float, default=1.0,
+                       help='Fleet size multiplier (default: 1.0)')
+    args = parser.parse_args()
+    
     if not DEPENDENCIES_AVAILABLE:
         return 1
     
@@ -511,60 +534,57 @@ def main():
     
     load_dotenv()
     
-    print("Aircraft Population Script")
-    print("=" * 30)
+    if args.verbose:
+        print("Aircraft Population Script")
+        print("=" * 30)
+        print("\nThis script will generate realistic aircraft fleets for each airline.")
+        print("Fleet composition is based on airline type (international, regional, low-cost, etc.)")
+        print(f"\nFleet size multiplier: {args.fleet_multiplier}x")
+        print("Base fleet sizes vary by airline type:")
+        print("  - Major US/International (American, Delta, United, Southwest): ~860 aircraft")
+        print("  - Large International (Lufthansa, Emirates, British Airways): ~485 aircraft")
+        print("  - Medium International (Air Canada, Qantas, JAL): ~305 aircraft")
+        print("  - Low-cost carriers (Ryanair, JetBlue, Spirit): ~210 aircraft")
+        print("  - Regional airlines (SkyWest, Regional Express): ~125 aircraft")
+        print("  - Cargo airlines (FedEx, UPS): ~120 aircraft")
+        print("  - Charter/private airlines: ~50 aircraft")
+        print("  - Small/startup airlines: ~80 aircraft")
+        print("  - Default medium airlines: ~105 aircraft")
     
     # Initialize
     db_manager = DatabaseManager()
-    populator = AircraftPopulator(db_manager)
+    populator = AircraftPopulator(db_manager, verbose=args.verbose)
     
-    # Get user preferences
-    print("\nThis script will generate realistic aircraft fleets for each airline.")
-    print("Fleet composition is based on airline type (international, regional, low-cost, etc.)")
-    
-    fleet_multiplier = 1.0  # Default
-    response = input(f"\nFleet size multiplier (default {fleet_multiplier}): ").strip()
-    try:
-        if response:
-            fleet_multiplier = float(response)
-    except ValueError:
-        print("Invalid input, using default multiplier")
-    
-    print(f"\nWill generate fleets with {fleet_multiplier}x base size")
-    print("Base fleet sizes vary by airline type:")
-    print("  - Major US/International (American, Delta, United, Southwest): ~860 aircraft")
-    print("  - Large International (Lufthansa, Emirates, British Airways): ~485 aircraft")
-    print("  - Medium International (Air Canada, Qantas, JAL): ~305 aircraft")
-    print("  - Low-cost carriers (Ryanair, JetBlue, Spirit): ~210 aircraft")
-    print("  - Regional airlines (SkyWest, Regional Express): ~125 aircraft")
-    print("  - Cargo airlines (FedEx, UPS): ~120 aircraft")
-    print("  - Charter/private airlines: ~50 aircraft")
-    print("  - Small/startup airlines: ~80 aircraft")
-    print("  - Default medium airlines: ~105 aircraft")
-    
-    # Confirmation
-    confirm = input("\nProceed with fleet generation? (y/N): ")
-    if confirm.lower() != 'y':
-        print("Operation cancelled.")
-        return 0
+    # Handle database reset
+    reset_db = False
+    if args.reset_db:
+        reset_db = True
+    elif args.no_reset:
+        reset_db = False
+    else:
+        # Only ask about database reset
+        response = input("Reset existing aircraft data? (y/N): ")
+        reset_db = response.lower() == 'y'
     
     try:
-        created_count = populator.populate_aircraft(fleet_multiplier)
+        created_count = populator.populate_aircraft(args.fleet_multiplier, reset_db=reset_db)
         
         if created_count > 0:
-            print(f"\n🎉 Successfully created {created_count:,} aircraft!")
-            print("\nYou can now run the flight population scripts:")
-            print("  python scripts/test_flight_population.py")
-            print("  python scripts/populate_flights_comprehensive.py")
+            print(f"✅ Successfully created {created_count:,} aircraft!")
+            if args.verbose:
+                print("\nYou can now run the flight population scripts:")
+                print("  python scripts/populate_flights_comprehensive.py")
+                print("  python scripts/populate_flights.py")
         else:
-            print("\n⚠ No aircraft were created.")
+            print("⚠ No aircraft were created.")
         
         return 0
         
     except Exception as e:
         print(f"\n❌ Error: {e}")
-        import traceback
-        traceback.print_exc()
+        if args.verbose:
+            import traceback
+            traceback.print_exc()
         return 1
 
 

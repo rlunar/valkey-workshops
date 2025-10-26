@@ -65,18 +65,30 @@ class GeoNamesCityDownloader:
         temp_dir = tempfile.mkdtemp()
         zip_path = os.path.join(temp_dir, f"{dataset}.zip")
         
-        # Download the file
+        # First, get file size using HEAD request
+        if self.verbose:
+            print("Checking file size...")
+        head_response = requests.head(url)
+        head_response.raise_for_status()
+        total_size = int(head_response.headers.get('content-length', 0))
+        
+        if self.verbose and total_size > 0:
+            # Convert bytes to MB for display
+            size_mb = total_size / (1024 * 1024)
+            print(f"File size: {size_mb:.1f} MB")
+        
+        # Download the file with progress bar
         response = requests.get(url, stream=True)
         response.raise_for_status()
         
-        # Get file size for progress bar
-        total_size = int(response.headers.get('content-length', 0))
-        
         with open(zip_path, 'wb') as f:
-            with tqdm(total=total_size, unit='B', unit_scale=True, desc="Downloading", disable=not self.verbose) as pbar:
+            # Always show download progress bar (even if not verbose)
+            with tqdm(total=total_size, unit='B', unit_scale=True, unit_divisor=1024, 
+                     desc=f"Downloading {dataset}", miniters=1) as pbar:
                 for chunk in response.iter_content(chunk_size=8192):
-                    f.write(chunk)
-                    pbar.update(len(chunk))
+                    if chunk:  # filter out keep-alive chunks
+                        f.write(chunk)
+                        pbar.update(len(chunk))
         
         # Extract the file
         if self.verbose:
@@ -216,7 +228,8 @@ class GeoNamesCityDownloader:
             processed_count = 0
             
             with open(txt_file, 'r', encoding='utf-8') as f:
-                with tqdm(total=total_lines, desc="Processing cities", disable=not self.verbose) as pbar:
+                # Always show processing progress bar since this is a long operation
+                with tqdm(total=total_lines, desc="Processing cities", unit="lines") as pbar:
                     for line in f:
                         pbar.update(1)
                         city_data = self.parse_geonames_line(line)
@@ -230,8 +243,8 @@ class GeoNamesCityDownloader:
                                     session.add_all(cities_batch)
                                     session.commit()
                                     processed_count += len(cities_batch)
-                                    if self.verbose:
-                                        pbar.set_postfix({"Cities saved": processed_count})
+                                    # Always show cities saved count
+                                    pbar.set_postfix({"Cities saved": processed_count})
                                     cities_batch = []
                     
                     # Process remaining cities

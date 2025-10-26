@@ -6,6 +6,7 @@ Download and import airports data from OpenFlights.org
 import sys
 import os
 import requests
+import argparse
 from pathlib import Path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -68,13 +69,14 @@ def download_airports_data():
         print(f"❌ Failed to download airports data: {e}")
         return False
 
-def analyze_airports_data():
+def analyze_airports_data(verbose=False):
     """Analyze the airports.dat file structure using Polars"""
     if not AIRPORTS_FILE.exists():
         print(f"✗ Airports file not found: {AIRPORTS_FILE}")
         return None
     
-    print("Analyzing airports data structure...")
+    if verbose:
+        print("Analyzing airports data structure...")
     
     # OpenFlights airports.dat format (CSV without headers):
     # Airport ID, Name, City, Country, IATA, ICAO, Latitude, Longitude, 
@@ -108,24 +110,26 @@ def analyze_airports_data():
         )
         
         print(f"✓ Loaded {len(df)} airports from OpenFlights data")
-        print(f"Columns: {df.columns}")
-        print(f"Shape: {df.shape}")
         
-        # Show sample data
-        print("\nSample data:")
-        print(df.head(3))
-        
-        # Data quality analysis
-        print("\nData Quality Analysis:")
-        print(f"- Total airports: {len(df)}")
-        print(f"- Airports with IATA codes: {df.filter(pl.col('iata').is_not_null()).height}")
-        print(f"- Airports with ICAO codes: {df.filter(pl.col('icao').is_not_null()).height}")
-        print(f"- Unique countries: {df['country'].n_unique()}")
-        print(f"- Airport types: {df['type'].value_counts()}")
-        
-        # Filter for airports (exclude heliports, seaplane bases, etc.)
-        airports_only = df.filter(pl.col('type') == 'airport')
-        print(f"- Airports only (excluding heliports, etc.): {len(airports_only)}")
+        if verbose:
+            print(f"Columns: {df.columns}")
+            print(f"Shape: {df.shape}")
+            
+            # Show sample data
+            print("\nSample data:")
+            print(df.head(3))
+            
+            # Data quality analysis
+            print("\nData Quality Analysis:")
+            print(f"- Total airports: {len(df)}")
+            print(f"- Airports with IATA codes: {df.filter(pl.col('iata').is_not_null()).height}")
+            print(f"- Airports with ICAO codes: {df.filter(pl.col('icao').is_not_null()).height}")
+            print(f"- Unique countries: {df['country'].n_unique()}")
+            print(f"- Airport types: {df['type'].value_counts()}")
+            
+            # Filter for airports (exclude heliports, seaplane bases, etc.)
+            airports_only = df.filter(pl.col('type') == 'airport')
+            print(f"- Airports only (excluding heliports, etc.): {len(airports_only)}")
         
         return df
         
@@ -258,9 +262,10 @@ def validate_geographic_data(airport_data):
     
     return errors, warnings
 
-def prepare_airport_data(df):
+def prepare_airport_data(df, verbose=False):
     """Prepare airport data for database insertion with normalized schema"""
-    print("Preparing airport data for normalized database insertion...")
+    if verbose:
+        print("Preparing airport data for normalized database insertion...")
     
     # Split data preparation into core airport data and geographic data
     prepared_df = df.select([
@@ -379,15 +384,17 @@ def prepare_airport_data(df):
     ])
     
     print(f"✓ Prepared {len(prepared_df)} airports for normalized database insertion")
-    print(f"Core airport data:")
-    print(f"  - Total airports: {len(prepared_df)}")
-    print(f"  - With IATA codes: {prepared_df.filter(pl.col('iata').is_not_null()).height}")
-    print(f"  - All have ICAO codes: {prepared_df.filter(pl.col('icao').is_not_null()).height}")
-    print(f"Geographic data coverage:")
-    print(f"  - With coordinates: {prepared_df.filter((pl.col('latitude').is_not_null()) & (pl.col('longitude').is_not_null())).height}")
-    print(f"  - With altitude data: {prepared_df.filter(pl.col('altitude').is_not_null()).height}")
-    print(f"  - With timezone data: {prepared_df.filter(pl.col('timezone_name').is_not_null()).height}")
-    print(f"  - With city/country: {prepared_df.filter((pl.col('city').is_not_null()) & (pl.col('country').is_not_null())).height}")
+    
+    if verbose:
+        print(f"Core airport data:")
+        print(f"  - Total airports: {len(prepared_df)}")
+        print(f"  - With IATA codes: {prepared_df.filter(pl.col('iata').is_not_null()).height}")
+        print(f"  - All have ICAO codes: {prepared_df.filter(pl.col('icao').is_not_null()).height}")
+        print(f"Geographic data coverage:")
+        print(f"  - With coordinates: {prepared_df.filter((pl.col('latitude').is_not_null()) & (pl.col('longitude').is_not_null())).height}")
+        print(f"  - With altitude data: {prepared_df.filter(pl.col('altitude').is_not_null()).height}")
+        print(f"  - With timezone data: {prepared_df.filter(pl.col('timezone_name').is_not_null()).height}")
+        print(f"  - With city/country: {prepared_df.filter((pl.col('city').is_not_null()) & (pl.col('country').is_not_null())).height}")
     
     return prepared_df
 
@@ -529,7 +536,7 @@ def create_airport_and_geo_records(airport_data, session):
     except Exception as e:
         return None, None, [f"Error creating records: {str(e)}"]
 
-def insert_airports_to_database(df):
+def insert_airports_to_database(df, verbose=False):
     """Insert airport data into the normalized database schema with proper transaction handling"""
     if not DEPENDENCIES_AVAILABLE:
         print("Dependencies not available for database operations")
@@ -547,7 +554,8 @@ def insert_airports_to_database(df):
             existing_airports = session.exec(select(Airport.icao)).all()
             existing_icao_codes.update(existing_airports)
             
-            print(f"Found {len(existing_icao_codes)} existing airports in database")
+            if verbose:
+                print(f"Found {len(existing_icao_codes)} existing airports in database")
             
             # Convert Polars DataFrame to list of dictionaries
             airports_data = df.to_dicts()
@@ -558,7 +566,8 @@ def insert_airports_to_database(df):
             warning_count = 0
             batch_size = 100  # Process in batches for better transaction management
             
-            print(f"Processing {len(airports_data)} airports in batches of {batch_size}...")
+            if verbose:
+                print(f"Processing {len(airports_data)} airports in batches of {batch_size}...")
             
             # Process airports in batches for better transaction handling
             with tqdm(
@@ -591,14 +600,14 @@ def insert_airports_to_database(df):
                                 airport, airport_geo, issues = create_airport_and_geo_records(airport_data, session)
                                 
                                 if airport is None:
-                                    if error_count < 10:  # Only show first 10 errors
+                                    if verbose and error_count < 10:  # Only show first 10 errors in verbose mode
                                         print(f"✗ Validation failed for {icao}: {', '.join(issues)}")
                                     batch_errors += 1
                                     continue
                                 
                                 if issues:  # These are warnings
                                     warning_count += len(issues)
-                                    if warning_count <= 10:  # Only show first 10 warnings
+                                    if verbose and warning_count <= 10:  # Only show first 10 warnings in verbose mode
                                         print(f"⚠ Warning for {icao}: {', '.join(issues)}")
                                 
                                 # Insert Airport record first
@@ -614,7 +623,7 @@ def insert_airports_to_database(df):
                                 batch_inserted += 1
                                 
                             except Exception as e:
-                                if batch_errors < 5:  # Only show first 5 errors per batch
+                                if verbose and batch_errors < 5:  # Only show first 5 errors per batch in verbose mode
                                     print(f"✗ Error processing {icao}: {e}")
                                 batch_errors += 1
                                 continue
@@ -638,7 +647,8 @@ def insert_airports_to_database(df):
                     except Exception as e:
                         # Rollback the entire batch on any error
                         session.rollback()
-                        print(f"✗ Batch transaction failed (airports {batch_start}-{batch_end}): {e}")
+                        if verbose:
+                            print(f"✗ Batch transaction failed (airports {batch_start}-{batch_end}): {e}")
                         error_count += len(batch_data)
                         pbar.update(len(batch_data))
                         continue
@@ -647,10 +657,11 @@ def insert_airports_to_database(df):
             print(f"- Inserted: {inserted_count} new airports (with geographic data)")
             print(f"- Skipped: {skipped_count} existing airports")
             print(f"- Errors: {error_count} airports failed validation/insertion")
-            print(f"- Warnings: {warning_count} data quality warnings")
+            if verbose:
+                print(f"- Warnings: {warning_count} data quality warnings")
             
             # Verify data integrity after insertion
-            verify_data_integrity(session)
+            verify_data_integrity(session, verbose)
             
             return True
             
@@ -658,7 +669,7 @@ def insert_airports_to_database(df):
         print(f"✗ Database insertion failed: {e}")
         return False
 
-def verify_data_integrity(session):
+def verify_data_integrity(session, verbose=False):
     """Verify data integrity after insertion"""
     try:
         # Check that all airports have corresponding geographic records
@@ -669,7 +680,8 @@ def verify_data_integrity(session):
         ).all()
         
         if airports_without_geo:
-            print(f"⚠ Warning: {len(airports_without_geo)} airports without geographic data")
+            if verbose:
+                print(f"⚠ Warning: {len(airports_without_geo)} airports without geographic data")
         
         # Check for orphaned geographic records (shouldn't happen with proper FK constraints)
         orphaned_geo = session.exec(
@@ -679,12 +691,15 @@ def verify_data_integrity(session):
         ).all()
         
         if orphaned_geo:
-            print(f"⚠ Warning: {len(orphaned_geo)} orphaned geographic records found")
+            if verbose:
+                print(f"⚠ Warning: {len(orphaned_geo)} orphaned geographic records found")
         else:
-            print("✓ Data integrity verification passed")
+            if verbose:
+                print("✓ Data integrity verification passed")
             
     except Exception as e:
-        print(f"⚠ Data integrity check failed: {e}")
+        if verbose:
+            print(f"⚠ Data integrity check failed: {e}")
 
 def show_database_stats():
     """Show statistics about airports in the normalized database schema"""
@@ -755,27 +770,35 @@ def show_database_stats():
 
 def main():
     """Main function to download and import airports data into normalized schema"""
+    parser = argparse.ArgumentParser(description="Download and import airports data from OpenFlights.org")
+    parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose output")
+    parser.add_argument("--yes", action="store_true", help="Skip confirmation prompts")
+    args = parser.parse_args()
+    
     if not DEPENDENCIES_AVAILABLE:
         print("Please install dependencies first: uv sync")
         return False
     
-    print("✈️  OpenFlights Airports Data Import (Normalized Schema)")
-    print("=" * 52)
+    if args.verbose:
+        print("✈️  OpenFlights Airports Data Import (Normalized Schema)")
+        print("=" * 52)
     
     # Check if .env file exists
     if not os.path.exists('.env'):
         print("⚠ .env file not found")
         print("Copy .env.example to .env and configure your database settings")
-        print("You can still download and analyze data without database connection")
+        if args.verbose:
+            print("You can still download and analyze data without database connection")
         
         # Offer to continue without database import
-        try:
-            response = input("\nContinue with download and analysis only? (y/N): ").strip().lower()
-            if response != 'y':
+        if not args.yes:
+            try:
+                response = input("\nContinue with download and analysis only? (y/N): ").strip().lower()
+                if response != 'y':
+                    return False
+            except KeyboardInterrupt:
+                print("\nOperation cancelled")
                 return False
-        except KeyboardInterrupt:
-            print("\nOperation cancelled")
-            return False
     
     # Step 1: Download data
     if not AIRPORTS_FILE.exists():
@@ -785,43 +808,50 @@ def main():
         print(f"✓ Airports data already exists: {AIRPORTS_FILE}")
     
     # Step 2: Analyze data
-    df = analyze_airports_data()
+    df = analyze_airports_data(verbose=args.verbose)
     if df is None:
         return False
     
     # Step 3: Prepare data
-    prepared_df = prepare_airport_data(df)
+    prepared_df = prepare_airport_data(df, verbose=args.verbose)
     if len(prepared_df) == 0:
         print("✗ No suitable airport data found")
         return False
     
     # Step 4: Insert into database (if .env exists)
     if os.path.exists('.env'):
-        print(f"\nFound {len(prepared_df):,} airports ready for import")
+        if args.verbose:
+            print(f"\nFound {len(prepared_df):,} airports ready for import")
         
-        # Ask user what to do
-        print("What would you like to do?")
-        print("  y = Import airports into database")
-        print("  s = Show current database statistics only")
-        
-        choice = input("\nChoice (y/s): ").strip().lower()
+        # Ask user what to do (unless --yes is specified)
+        if args.yes:
+            choice = 'y'
+        else:
+            print("What would you like to do?")
+            print("  y = Import airports into database")
+            print("  s = Show current database statistics only")
+            choice = input("\nChoice (y/s): ").strip().lower()
         
         if choice == 's':
             show_database_stats()
             return True
         elif choice == 'y':
-            print("Importing airports into normalized database schema...")
-            if not insert_airports_to_database(prepared_df):
+            if args.verbose:
+                print("Importing airports into normalized database schema...")
+            if not insert_airports_to_database(prepared_df, verbose=args.verbose):
                 return False
-            print("\n" + "=" * 50)
+            if args.verbose:
+                print("\n" + "=" * 50)
             show_database_stats()
-            print("\n🎉 Normalized airport data import completed successfully!")
+            if args.verbose:
+                print("\n🎉 Normalized airport data import completed successfully!")
         else:
             print("Invalid choice. Showing statistics only.")
             show_database_stats()
     else:
         print(f"\n✓ Data analysis completed! {len(prepared_df)} airports ready for normalized import")
-        print("Configure .env file and run again to import into normalized database schema")
+        if args.verbose:
+            print("Configure .env file and run again to import into normalized database schema")
     
     return True
 

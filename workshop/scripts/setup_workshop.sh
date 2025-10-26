@@ -2,8 +2,32 @@
 
 # Flughafen DB - Complete Database Setup Script
 # This script resets the database and imports all data from OpenFlights.org
+#
+# Usage: ./setup_workshop.sh [-s] [-v]
+#   -s    Step-by-step mode (wait for confirmation after each step)
+#   -v    Verbose mode (show detailed output)
 
 set -e  # Exit on any error
+
+# Parse command line arguments
+STEP_BY_STEP=false
+VERBOSE=false
+while getopts "sv" opt; do
+    case $opt in
+        s)
+            STEP_BY_STEP=true
+            ;;
+        v)
+            VERBOSE=true
+            ;;
+        \?)
+            echo "Usage: $0 [-s] [-v]"
+            echo "  -s    Step-by-step mode (wait for confirmation after each step)"
+            echo "  -v    Verbose mode (show detailed output)"
+            exit 1
+            ;;
+    esac
+done
 
 # Colors for output
 RED='\033[0;31m'
@@ -36,6 +60,15 @@ print_header() {
     echo -e "${BLUE}================================${NC}"
 }
 
+# Function to wait for user confirmation in step-by-step mode
+wait_for_confirmation() {
+    if [ "$STEP_BY_STEP" = true ]; then
+        echo
+        read -p "Press Enter to continue to the next step, or Ctrl+C to exit..." -r
+        echo
+    fi
+}
+
 # Check if we're in the right directory
 if [ ! -f "pyproject.toml" ] || [ ! -d "models" ] || [ ! -d "scripts" ]; then
     print_error "Please run this script from the project root directory"
@@ -61,6 +94,12 @@ echo "  5. Download and import airlines data"
 echo "  6. Download and import airports data"
 echo "  7. Download and import routes data"
 echo
+if [ "$STEP_BY_STEP" = true ]; then
+    print_status "Running in step-by-step mode - you'll be prompted after each step"
+fi
+if [ "$VERBOSE" = true ]; then
+    print_status "Running in verbose mode - detailed output will be shown"
+fi
 print_warning "This will DELETE ALL EXISTING DATA in your database!"
 echo
 
@@ -97,23 +136,25 @@ fi
 print_header "Step 1: Resetting Database"
 print_status "Dropping all existing tables and creating fresh schema..."
 
-echo "y" | uv run python scripts/reset_database.py
+uv run python scripts/reset_database.py --yes
 if [ $? -ne 0 ]; then
     print_error "Database reset failed"
     exit 1
 fi
 print_success "Database reset completed"
+wait_for_confirmation
 
 # Step 2: Download Countries
 print_header "Step 2: Importing Countries Data"
 print_status "Downloading and importing countries from OpenFlights.org..."
 
-echo "y" | uv run python scripts/download_countries.py
+uv run python scripts/download_countries.py --yes
 if [ $? -ne 0 ]; then
     print_error "Countries import failed"
     exit 1
 fi
 print_success "Countries data imported successfully"
+wait_for_confirmation
 
 # Step 3: Download Cities
 print_header "Step 3: Importing Cities Data"
@@ -131,39 +172,43 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 print_success "Cities data imported successfully"
+wait_for_confirmation
 
 # Step 4: Download Aircraft Types (Airplanes)
 print_header "Step 4: Importing Aircraft Types Data"
 print_status "Downloading and importing aircraft types from OpenFlights.org..."
 
-echo "y" | uv run python scripts/download_planes.py
+uv run python scripts/download_planes.py --yes
 if [ $? -ne 0 ]; then
     print_error "Aircraft types import failed"
     exit 1
 fi
 print_success "Aircraft types data imported successfully"
+wait_for_confirmation
 
 # Step 5: Download Airlines
 print_header "Step 5: Importing Airlines Data"
 print_status "Downloading and importing airlines from OpenFlights.org..."
 
-echo "y" | uv run python scripts/download_airlines.py
+uv run python scripts/download_airlines.py --yes
 if [ $? -ne 0 ]; then
     print_error "Airlines import failed"
     exit 1
 fi
 print_success "Airlines data imported successfully"
+wait_for_confirmation
 
 # Step 6: Download Airports
 print_header "Step 6: Importing Airports Data"
 print_status "Downloading and importing airports from OpenFlights.org..."
 
-echo "y" | uv run python scripts/download_airports.py
+echo "y" | uv run python scripts/download_airports.py --yes
 if [ $? -ne 0 ]; then
     print_error "Airports import failed"
     exit 1
 fi
 print_success "Airports data imported successfully"
+wait_for_confirmation
 
 # Step 7: Create City-Airport Relations
 print_header "Step 7: Creating City-Airport Relationships"
@@ -198,17 +243,23 @@ if [ "$cities_imported" -gt 0 ]; then
 else
     print_status "Skipping city-airport relationships (cities not imported)"
 fi
+wait_for_confirmation
 
 # Step 8: Download Routes
 print_header "Step 8: Importing Routes Data"
 print_status "Downloading and importing routes from OpenFlights.org..."
 
-echo "y" | uv run python scripts/download_routes.py
+if [ "$VERBOSE" = true ]; then
+    echo "y" | uv run python scripts/download_routes.py --yes --verbose
+else
+    echo "y" | uv run python scripts/download_routes.py --yes
+fi
 if [ $? -ne 0 ]; then
     print_error "Routes import failed"
     exit 1
 fi
 print_success "Routes data imported successfully"
+wait_for_confirmation
 
 # Step 9: Populate Aircraft Fleets
 print_header "Step 9: Populating Aircraft Fleets"
@@ -216,12 +267,13 @@ print_status "Generating realistic aircraft fleets for airlines..."
 echo "This step creates aircraft instances for each airline based on their characteristics."
 echo
 
-uv run python scripts/populate_aircraft.py
+uv run python scripts/populate_aircraft.py --reset-db
 if [ $? -ne 0 ]; then
     print_error "Aircraft fleet population failed"
     exit 1
 fi
 print_success "Aircraft fleets populated successfully"
+wait_for_confirmation
 
 # Step 10: Populate Flight Schedules
 print_header "Step 10: Populating Flight Schedules"
@@ -240,10 +292,10 @@ echo
 
 if [[ $REPLY =~ ^[2]$ ]]; then
     print_status "Using comprehensive flight population..."
-    uv run python scripts/populate_flights_comprehensive.py
+    uv run python scripts/populate_flights_comprehensive.py --reset-db
 else
     print_status "Using simple flight population..."
-    uv run python scripts/populate_flights_simple.py
+    uv run python scripts/populate_flights_simple.py --yes
 fi
 
 if [ $? -ne 0 ]; then
@@ -251,6 +303,7 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 print_success "Flight schedules populated successfully"
+wait_for_confirmation
 
 # Final Summary
 print_header "Setup Complete!"
