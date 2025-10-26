@@ -210,6 +210,48 @@ if [ $? -ne 0 ]; then
 fi
 print_success "Routes data imported successfully"
 
+# Step 9: Populate Aircraft Fleets
+print_header "Step 9: Populating Aircraft Fleets"
+print_status "Generating realistic aircraft fleets for airlines..."
+echo "This step creates aircraft instances for each airline based on their characteristics."
+echo
+
+uv run python scripts/populate_aircraft.py
+if [ $? -ne 0 ]; then
+    print_error "Aircraft fleet population failed"
+    exit 1
+fi
+print_success "Aircraft fleets populated successfully"
+
+# Step 10: Populate Flight Schedules
+print_header "Step 10: Populating Flight Schedules"
+print_status "Generating flight schedules based on routes and flight rules..."
+echo "This step creates realistic flight schedules for the next year."
+echo "This may take several minutes depending on the number of routes."
+echo
+
+# Ask user which flight population method to use
+echo "Choose flight population method:"
+echo "  1) Simple - Basic flight generation (faster)"
+echo "  2) Comprehensive - Advanced flight generation with detailed rules (slower)"
+echo
+read -p "Enter your choice (1 or 2, default: 1): " -n 1 -r
+echo
+
+if [[ $REPLY =~ ^[2]$ ]]; then
+    print_status "Using comprehensive flight population..."
+    uv run python scripts/populate_flights_comprehensive.py
+else
+    print_status "Using simple flight population..."
+    uv run python scripts/populate_flights_simple.py
+fi
+
+if [ $? -ne 0 ]; then
+    print_error "Flight schedule population failed"
+    exit 1
+fi
+print_success "Flight schedules populated successfully"
+
 # Final Summary
 print_header "Setup Complete!"
 print_success "Database setup completed successfully!"
@@ -220,6 +262,8 @@ echo "  ✓ Aircraft types data (~246 aircraft types)"
 echo "  ✓ Airlines data (~6,100+ airlines)"
 echo "  ✓ Airports data (~7,700 airports worldwide)"
 echo "  ✓ Routes data (~67,600+ routes between airports)"
+echo "  ✓ Aircraft fleets (realistic fleets for each airline)"
+echo "  ✓ Flight schedules (realistic flight schedules based on routes)"
 
 # Check if cities and city-airport relations were imported
 uv run python -c "
@@ -256,6 +300,7 @@ echo "  • View aircraft stats: uv run python scripts/planes_stats.py"
 echo "  • View route stats: uv run python scripts/routes_stats.py"
 echo "  • Try examples: uv run python scripts/database_example.py"
 echo "  • Try route examples: uv run python scripts/route_example.py"
+echo "  • Test flight population: uv run python scripts/test_flight_population.py"
 if uv run python -c "
 import sys, os
 sys.path.append('.')
