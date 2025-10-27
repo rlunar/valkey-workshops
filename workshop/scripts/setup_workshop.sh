@@ -93,6 +93,10 @@ echo "  4. Download and import aircraft types data"
 echo "  5. Download and import airlines data"
 echo "  6. Download and import airports data"
 echo "  7. Download and import routes data"
+echo "  8. Populate aircraft fleets"
+echo "  9. Populate flight schedules"
+echo "  10. Populate passenger data"
+echo "  11. Populate flight bookings"
 echo
 if [ "$STEP_BY_STEP" = true ]; then
     print_status "Running in step-by-step mode - you'll be prompted after each step"
@@ -265,9 +269,10 @@ wait_for_confirmation
 print_header "Step 9: Populating Aircraft Fleets"
 print_status "Generating realistic aircraft fleets for airlines..."
 echo "This step creates aircraft instances for each airline based on their characteristics."
+echo "Fleet sizes are optimized for realistic airline operations with proper capacity distribution."
 echo
 
-uv run python scripts/populate_aircraft.py --reset-db
+uv run python scripts/populate_aircraft.py --reset-db --fleet-multiplier 0.3
 if [ $? -ne 0 ]; then
     print_error "Aircraft fleet population failed"
     exit 1
@@ -278,24 +283,25 @@ wait_for_confirmation
 # Step 10: Populate Flight Schedules
 print_header "Step 10: Populating Flight Schedules"
 print_status "Generating flight schedules based on routes and flight rules..."
-echo "This step creates realistic flight schedules for the next year."
+echo "This step creates realistic flight schedules using comprehensive flight rules."
+echo "Aircraft selection is optimized for route distance and passenger demand."
 echo "This may take several minutes depending on the number of routes."
 echo
 
 # Ask user which flight population method to use
 echo "Choose flight population method:"
-echo "  1) Simple - Basic flight generation (faster)"
-echo "  2) Comprehensive - Advanced flight generation with detailed rules (slower)"
+echo "  1) Comprehensive - Advanced flight generation with detailed rules (recommended)"
+echo "  2) Simple - Basic flight generation (faster, less realistic)"
 echo
 read -p "Enter your choice (1 or 2, default: 1): " -n 1 -r
 echo
 
 if [[ $REPLY =~ ^[2]$ ]]; then
-    print_status "Using comprehensive flight population..."
-    uv run python scripts/populate_flights_comprehensive.py --reset-db
-else
     print_status "Using simple flight population..."
     uv run python scripts/populate_flights_simple.py --yes
+else
+    print_status "Using comprehensive flight population (recommended)..."
+    uv run python scripts/populate_flights_comprehensive.py --no-reset
 fi
 
 if [ $? -ne 0 ]; then
@@ -303,6 +309,106 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 print_success "Flight schedules populated successfully"
+wait_for_confirmation
+
+# Step 11: Populate Passenger Data
+print_header "Step 11: Populating Passenger Data"
+print_status "Generating realistic passenger records with global distribution..."
+echo "This step creates passenger records with realistic geographic distributions."
+echo "Default: 1 million passengers (can be customized with --total-records)"
+echo "This may take several minutes depending on the number of records."
+echo
+
+# Ask user for passenger count
+echo "Choose passenger population size:"
+echo "  1) Small - 100,000 passengers (fast, good for testing)"
+echo "  2) Medium - 1,000,000 passengers (recommended for workshops)"
+echo "  3) Large - 10,000,000 passengers (full dataset, takes longer)"
+echo "  4) Custom - Enter your own number"
+echo
+read -p "Enter your choice (1-4, default: 2): " -n 1 -r
+echo
+
+case $REPLY in
+    1)
+        passenger_count=100000
+        print_status "Using small dataset (100K passengers)..."
+        ;;
+    3)
+        passenger_count=10000000
+        print_status "Using large dataset (10M passengers)..."
+        ;;
+    4)
+        echo
+        read -p "Enter number of passengers: " passenger_count
+        if ! [[ "$passenger_count" =~ ^[0-9]+$ ]] || [ "$passenger_count" -le 0 ]; then
+            print_warning "Invalid number, using default (1M passengers)"
+            passenger_count=1000000
+        fi
+        print_status "Using custom dataset ($passenger_count passengers)..."
+        ;;
+    *)
+        passenger_count=1000000
+        print_status "Using medium dataset (1M passengers)..."
+        ;;
+esac
+
+uv run python scripts/populate_passengers.py --total-records $passenger_count --batch-size 50000 --clear
+if [ $? -ne 0 ]; then
+    print_error "Passenger population failed"
+    exit 1
+fi
+print_success "Passenger data populated successfully"
+wait_for_confirmation
+
+# Step 12: Populate Flight Bookings
+print_header "Step 12: Populating Flight Bookings"
+print_status "Generating realistic flight bookings with optimized occupancy rates..."
+echo "This step creates passenger bookings for flights with realistic occupancy patterns."
+echo "Peak flights: 90-98% occupancy, Off-peak flights: 75-88% occupancy"
+echo "This may take several minutes depending on the number of flights."
+echo
+
+# Ask user for booking population size
+echo "Choose booking population size:"
+echo "  1) Sample - 5,000 flights (fast, good for testing)"
+echo "  2) Medium - 50,000 flights (recommended for workshops)"
+echo "  3) Large - 200,000 flights (comprehensive dataset)"
+echo "  4) All flights - Process all available flights (may take a long time)"
+echo
+read -p "Enter your choice (1-4, default: 2): " -n 1 -r
+echo
+
+case $REPLY in
+    1)
+        max_flights=5000
+        print_status "Using sample dataset (5K flights)..."
+        ;;
+    3)
+        max_flights=200000
+        print_status "Using large dataset (200K flights)..."
+        ;;
+    4)
+        max_flights=""
+        print_status "Processing all available flights..."
+        ;;
+    *)
+        max_flights=50000
+        print_status "Using medium dataset (50K flights)..."
+        ;;
+esac
+
+if [ -n "$max_flights" ]; then
+    uv run python scripts/populate_bookings_optimized.py --max-flights $max_flights --clear
+else
+    uv run python scripts/populate_bookings_optimized.py --clear
+fi
+
+if [ $? -ne 0 ]; then
+    print_error "Flight booking population failed"
+    exit 1
+fi
+print_success "Flight bookings populated successfully"
 wait_for_confirmation
 
 # Final Summary
@@ -315,8 +421,10 @@ echo "  ✓ Aircraft types data (~246 aircraft types)"
 echo "  ✓ Airlines data (~6,100+ airlines)"
 echo "  ✓ Airports data (~7,700 airports worldwide)"
 echo "  ✓ Routes data (~67,600+ routes between airports)"
-echo "  ✓ Aircraft fleets (realistic fleets for each airline)"
-echo "  ✓ Flight schedules (realistic flight schedules based on routes)"
+echo "  ✓ Aircraft fleets (realistic fleets optimized for airline operations)"
+echo "  ✓ Flight schedules (comprehensive flight schedules with smart aircraft selection)"
+echo "  ✓ Passenger data (realistic passenger records with global distribution)"
+echo "  ✓ Flight bookings (realistic bookings with optimized occupancy rates)"
 
 # Check if cities and city-airport relations were imported
 uv run python -c "
@@ -351,9 +459,13 @@ echo "  • Run validation: uv run python scripts/validate_models.py"
 echo "  • View statistics: uv run python scripts/airlines_stats.py"
 echo "  • View aircraft stats: uv run python scripts/planes_stats.py"
 echo "  • View route stats: uv run python scripts/routes_stats.py"
+echo "  • Debug aircraft capacity: uv run python scripts/debug_aircraft_capacity.py"
+echo "  • Validate passenger data: uv run python scripts/validate_passenger_data.py"
+echo "  • Validate booking system: uv run python scripts/validate_booking_system.py"
 echo "  • Try examples: uv run python scripts/database_example.py"
 echo "  • Try route examples: uv run python scripts/route_example.py"
 echo "  • Test flight population: uv run python scripts/test_flight_population.py"
+echo "  • Test booking population: uv run python scripts/test_optimized_bookings.py"
 if uv run python -c "
 import sys, os
 sys.path.append('.')

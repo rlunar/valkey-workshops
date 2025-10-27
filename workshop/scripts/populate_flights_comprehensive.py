@@ -36,10 +36,14 @@ except ImportError as e:
 class ComprehensiveFlightPopulator:
     """Generate flights using comprehensive flight rules and realistic patterns"""
     
-    def __init__(self, db_manager: DatabaseManager, verbose: bool = False):
+    def __init__(self, db_manager: DatabaseManager, verbose: bool = False, flight_reduction_factor: float = 0.2):
         self.db_manager = db_manager
         self.config = FlightConfig()
         self.verbose = verbose
+        
+        # Global flight reduction factor for 100M bookings target
+        # 0.2 = 80% reduction from original flight rules
+        self.flight_reduction_factor = flight_reduction_factor
         
         # Cache for database lookups
         self._airport_cache = {}
@@ -113,7 +117,16 @@ class ComprehensiveFlightPopulator:
     def get_routes_sample(self, session: Session, sample_size: int = 2000) -> List[Dict[str, Any]]:
         """Get a representative sample of routes"""
         
-        # Get routes with complete data
+        # Get existing airline codes from cache
+        existing_airlines = list(self._airline_cache.keys())
+        existing_airports = list(self._airport_cache.keys())
+        
+        if not existing_airlines or not existing_airports:
+            if self.verbose:
+                print("No airlines or airports in cache")
+            return []
+        
+        # Get routes with complete data that match existing airlines and airports
         routes_query = (
             select(
                 Route.route_id,
@@ -127,19 +140,16 @@ class ComprehensiveFlightPopulator:
             .where(
                 Route.source_airport_code.is_not(None),
                 Route.destination_airport_code.is_not(None),
-                Route.airline_code.is_not(None)
+                Route.airline_code.is_not(None),
+                Route.source_airport_code.in_(existing_airports),
+                Route.destination_airport_code.in_(existing_airports),
+                Route.airline_code.in_(existing_airlines)
             )
             .limit(sample_size)
         )
         
         routes = []
         for route in session.exec(routes_query).all():
-            # Skip if airports or airline not in cache
-            if (route.source_airport_code not in self._airport_cache or
-                route.destination_airport_code not in self._airport_cache or
-                route.airline_code not in self._airline_cache):
-                continue
-            
             routes.append({
                 'route_id': route.route_id,
                 'origin': route.source_airport_code,
@@ -240,6 +250,9 @@ class ComprehensiveFlightPopulator:
         
         # Calculate final flight count
         total_flights = base_flights * seasonal_mult * dow_mult * airline_mult * codeshare_mult * tier_priority
+        
+        # Apply global flight reduction factor for 100M bookings target
+        total_flights *= self.flight_reduction_factor
         
         # Convert to integer with probabilistic rounding
         flights_today = int(total_flights)
@@ -713,6 +726,8 @@ def main():
                        help='Reset database without prompting')
     parser.add_argument('--no-reset', action='store_true',
                        help='Keep existing data without prompting')
+    parser.add_argument('--flight-reduction', type=float, default=0.2,
+                       help='Flight reduction factor for 100M bookings target (default: 0.2 = 80%% reduction)')
     args = parser.parse_args()
     
     if not DEPENDENCIES_AVAILABLE:
@@ -730,9 +745,9 @@ def main():
         print("=" * 40)
         FlightConfig.print_configuration_summary()
     
-    # Initialize
+    # Initialize with flight reduction for 100M bookings target
     db_manager = DatabaseManager()
-    populator = ComprehensiveFlightPopulator(db_manager, verbose=args.verbose)
+    populator = ComprehensiveFlightPopulator(db_manager, verbose=args.verbose, flight_reduction_factor=args.flight_reduction)
     
     # Define date range - default to full 2-year population
     today = datetime.now()

@@ -13,7 +13,30 @@ class DatabaseManager:
     def __init__(self, database_url: str = None):
         if database_url is None:
             database_url = self._build_database_url()
-        self.engine = create_engine(database_url, echo=False)
+        
+        # Configure engine with better settings for large operations
+        engine_kwargs = {
+            "echo": False,
+            "pool_size": 20,
+            "max_overflow": 30,
+            "pool_timeout": 30,
+            "pool_recycle": 3600,  # Recycle connections every hour
+            "pool_pre_ping": True,  # Validate connections before use
+        }
+        
+        # Add database-specific settings
+        if "mysql" in database_url:
+            engine_kwargs["connect_args"] = {
+                "connect_timeout": 60,
+                "read_timeout": 300,
+                "write_timeout": 300,
+            }
+        elif "postgresql" in database_url:
+            engine_kwargs["connect_args"] = {
+                "connect_timeout": 60,
+            }
+        
+        self.engine = create_engine(database_url, **engine_kwargs)
     
     @staticmethod
     def _build_database_url() -> str:

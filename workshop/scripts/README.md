@@ -157,3 +157,110 @@ The script provides real-time progress updates including:
 - Total records inserted
 - Percentage completion
 - Geographic distribution summary at completion
+
+## Booking Population System
+
+### Overview
+
+The booking population system generates realistic airline booking data that follows industry patterns and business rules. It creates bookings that respect aircraft capacity, prevent passenger conflicts, and implement sophisticated occupancy patterns.
+
+### Key Features
+
+**🎯 Realistic Occupancy Patterns**
+- Peak times (90-95% occupancy): Business hours, weekdays, holidays
+- Off-peak times (60-75% occupancy): Nights, weekends, regular periods
+- Dynamic calculation based on departure timing
+
+**👥 Passenger Management**
+- No double-booking: Prevents overlapping flight conflicts
+- 2-hour buffer for connections
+- Automatic passenger pool management
+
+**✈️ Business vs Leisure Travel**
+- Business travelers: 85% book returns (1-7 days)
+- Leisure travelers: 70% book returns (3-21 days)
+- Realistic timing preferences
+
+**💺 Seat Assignment System**
+- Aircraft-appropriate seat maps
+- Class distribution: 85% economy, 12% business, 3% first
+- Unique seat assignments per flight
+
+**💰 Dynamic Pricing**
+- Distance-based pricing ($0.15/km base)
+- Class multipliers (economy 1x, business 3.5x, first 6x)
+- Peak time surcharge (30%)
+- Return flight discount (10%)
+
+### Quick Start
+
+```bash
+# Basic booking population
+python scripts/populate_bookings.py
+
+# Clear existing bookings first
+python scripts/populate_bookings.py --clear
+
+# Test the logic with sample data
+python scripts/test_booking_population.py
+
+# Validate booking data integrity
+python scripts/validate_booking_system.py
+```
+
+### Usage Options
+
+```bash
+# Custom batch size for performance tuning
+python scripts/populate_bookings.py --batch-size 5000
+
+# Enable verbose output for debugging
+python scripts/populate_bookings.py --verbose
+
+# Full workflow
+python scripts/populate_bookings.py --clear --verbose
+```
+
+### Prerequisites
+
+Before running booking population:
+1. Populated `flight` table
+2. Populated `passenger` table
+3. Populated `airplane` table (for capacity data)
+4. Database tables created via `setup_database.py`
+
+### Performance Characteristics
+
+- **Processing Rate**: 1,000-5,000 bookings/second
+- **Memory Usage**: Moderate (tracks passenger conflicts)
+- **Database Load**: Optimized batch inserts
+
+### Data Quality Assurance
+
+The system enforces strict business rules:
+- No overbooking (never exceeds aircraft capacity)
+- No double-booking (passengers can't be in two places at once)
+- Realistic occupancy following airline industry patterns
+- Market-realistic ticket pricing
+- Valid seat assignments for each aircraft type
+
+### Validation and Monitoring
+
+```bash
+# Comprehensive validation
+python scripts/validate_booking_system.py
+```
+
+Checks include:
+- Duplicate seat detection
+- Occupancy rate analysis
+- Price distribution validation
+- Peak vs off-peak patterns
+- Passenger booking frequency
+
+### Documentation
+
+For detailed information, see:
+- `scripts/README_booking_population.md` - Complete system documentation
+- `scripts/test_booking_population.py` - Logic validation
+- `scripts/validate_booking_system.py` - Data integrity checks

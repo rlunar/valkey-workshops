@@ -50,7 +50,17 @@ class PassengerGenerator:
             'en_CA': Faker('en_CA'), 'nl_NL': Faker('nl_NL'), 'es_MX': Faker('es_MX'),
             'tr_TR': Faker('tr_TR'), 'pl_PL': Faker('pl_PL'), 'pt_PT': Faker('pt_PT'),
             'cs_CZ': Faker('cs_CZ'), 'sv_SE': Faker('sv_SE'), 'no_NO': Faker('no_NO'),
-            'da_DK': Faker('da_DK'), 'fi_FI': Faker('fi_FI')
+            'da_DK': Faker('da_DK'), 'fi_FI': Faker('fi_FI'),
+            # Additional locales for global coverage
+            'zh_CN': Faker('en_US'),  # Use English for Chinese to avoid script issues
+            'ja_JP': Faker('en_US'),  # Use English for Japanese to avoid script issues
+            'ko_KR': Faker('en_US'),  # Use English for Korean to avoid script issues
+            'ar_SA': Faker('en_US'),  # Use English for Arabic to avoid script issues
+            'ar_EG': Faker('en_US'),  # Use English for Arabic to avoid script issues
+            'hi_IN': Faker('en_US'),  # Use English for Hindi to avoid script issues
+            'th_TH': Faker('en_US'),  # Use English for Thai to avoid script issues
+            'he_IL': Faker('en_US'),  # Use English for Hebrew to avoid script issues
+            'id_ID': Faker('en_US'),  # Use English for Indonesian to avoid script issues
         }
         
         # Age distribution weights
@@ -66,7 +76,7 @@ class PassengerGenerator:
         
         # Sequential country processing plan for 10M passengers
         # Each country gets processed completely before moving to the next
-        self.country_plan = [
+        self.country_distribution = {
             # North America - Highest travel volume
             'United States': {
                 'weight': 22.0, 'faker': 'en_US', 'iso_code': 'US',
@@ -432,10 +442,18 @@ class PassengerGenerator:
             # Fast passport generation
             passport_no = self.generate_passport_number(city_info['iso_code'])
             
-            # Fast name selection from pre-generated pools
-            name_pool = self.name_pools[city_info['faker']]
-            first_name = random.choice(name_pool['first_names'])
-            last_name = random.choice(name_pool['last_names'])
+            # Generate names using Faker
+            faker = self.fakers[city_info['faker']]
+            
+            # Generate locale-appropriate names (force English for readability)
+            if city_info['faker'] in ['zh_CN', 'ja_JP', 'ko_KR', 'ar_SA', 'ar_EG', 'hi_IN', 'th_TH', 'he_IL']:
+                # Use English faker for these locales to avoid script issues
+                english_faker = self.fakers['en_US']
+                first_name = english_faker.first_name()
+                last_name = english_faker.last_name()
+            else:
+                first_name = faker.first_name()
+                last_name = faker.last_name()
             
             # Fast age selection
             age = random.choices(self.age_range, weights=self.age_weights)[0]
@@ -443,9 +461,9 @@ class PassengerGenerator:
             
             # Fast other selections
             sex = random.choice(['M', 'F'])
-            street = random.choice(name_pool['streets'])
-            email = random.choice(name_pool['emails']) if random.random() < 0.85 else None
-            phone = random.choice(name_pool['phones']) if random.random() < 0.75 else None
+            street = faker.street_address()
+            email = faker.email() if random.random() < 0.85 else None
+            phone = faker.phone_number() if random.random() < 0.75 else None
             
             # Build SQL values (escape single quotes)
             first_name_escaped = first_name.replace("'", "''")
