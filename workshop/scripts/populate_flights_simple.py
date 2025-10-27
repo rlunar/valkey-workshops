@@ -353,10 +353,9 @@ def main():
     db_manager = DatabaseManager()
     populator = SimpleFlightPopulator(db_manager, verbose=args.verbose)
     
-    # Define date range
-    today = datetime.now()
-    start_date = datetime(today.year - 1, 1, 1)  # Last year
-    end_date = datetime(today.year + 1, 12, 31)  # Next year
+    # Define date range - optimized for 2025 and first half of 2026
+    start_date = datetime(2025, 1, 1)  # Start of 2025
+    end_date = datetime(2026, 6, 30)   # End of first half of 2026
     
     if args.verbose:
         print(f"Date range: {start_date.date()} to {end_date.date()}")

@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
 """
-Comprehensive Flight Population Script
+Realistic Flight Population Script
 
-Generate realistic flight schedules based on flight rules, route data, and airport tiers.
-Implements the recommendations from docs/flight_rules.md
+Generate flights with priority for major hub airports based on actual route data.
+This script prioritizes routes involving major hubs like ATL, ORD, LHR, CDG, FRA, LAX, DFW, JFK.
 """
 
 import os
 import sys
 import random
-import math
 from datetime import datetime, timedelta, time
 from typing import List, Dict, Any, Optional, Tuple
 from sqlmodel import Session, select, func
@@ -33,23 +32,31 @@ except ImportError as e:
     DEPENDENCIES_AVAILABLE = False
 
 
-class ComprehensiveFlightPopulator:
-    """Generate flights using comprehensive flight rules and realistic patterns"""
+class RealisticFlightPopulator:
+    """Generate flights with priority for major hub airports"""
     
-    def __init__(self, db_manager: DatabaseManager, verbose: bool = False, flight_reduction_factor: float = 0.2):
+    def __init__(self, db_manager: DatabaseManager, verbose: bool = False):
         self.db_manager = db_manager
         self.config = FlightConfig()
         self.verbose = verbose
         
-        # Global flight reduction factor for 100M bookings target
-        # 0.2 = 80% reduction from original flight rules
-        self.flight_reduction_factor = flight_reduction_factor
+        # Major hub airports (prioritized for flight generation)
+        self.major_hubs = {
+            'ATL', 'ORD', 'LHR', 'CDG', 'FRA', 'LAX', 'DFW', 'JFK',
+            'AMS', 'PEK', 'NRT', 'ICN', 'SIN', 'DXB', 'LGW', 'FCO',
+            'MAD', 'BCN', 'MUC', 'ZUR', 'VIE', 'CPH', 'ARN', 'HEL',
+            'SVO', 'IST', 'DOH', 'BKK', 'HKG', 'PVG', 'CAN', 'DEL',
+            'BOM', 'SYD', 'MEL', 'YYZ', 'YVR', 'GRU', 'EZE', 'SCL',
+            'LIM', 'BOG', 'PTY', 'CUN', 'MEX', 'MCO', 'LAS', 'PHX',
+            'SEA', 'SFO', 'DEN', 'IAH', 'MIA', 'BOS', 'EWR', 'CLT'
+        }
         
         # Cache for database lookups
         self._airport_cache = {}
         self._airline_cache = {}
         self._aircraft_cache = []
         self._route_counts_cache = {}
+        self._hub_routes_cache = []
     
     def initialize_caches(self, session: Session):
         """Initialize lookup caches for better performance"""
@@ -84,6 +91,10 @@ class ComprehensiveFlightPopulator:
             print(f"Cached {len(self._airport_cache)} airports, "
                   f"{len(self._airline_cache)} airlines, "
                   f"{len(self._aircraft_cache)} aircraft")
+            
+            # Show major hubs found
+            found_hubs = [hub for hub in self.major_hubs if hub in self._airport_cache]
+            print(f"Found {len(found_hubs)} major hubs in database: {', '.join(sorted(found_hubs))}")
     
     def calculate_airport_route_counts(self, session: Session) -> Dict[str, int]:
         """Calculate total route counts per airport (inbound + outbound)"""
@@ -114,10 +125,10 @@ class ComprehensiveFlightPopulator:
         
         return route_counts
     
-    def get_routes_sample(self, session: Session, sample_size: int = 2000) -> List[Dict[str, Any]]:
-        """Get a representative sample of routes"""
+    def get_prioritized_routes(self, session: Session, max_routes: int = 2000) -> List[Dict[str, Any]]:
+        """Get routes prioritized by major hub involvement"""
         
-        # Get existing airline codes from cache
+        # Get existing airline codes and airports from cache
         existing_airlines = list(self._airline_cache.keys())
         existing_airports = list(self._airport_cache.keys())
         
@@ -126,8 +137,14 @@ class ComprehensiveFlightPopulator:
                 print("No airlines or airports in cache")
             return []
         
-        # Get routes with complete data that match existing airlines and airports
-        routes_query = (
+        # Find major hubs that exist in our database
+        available_hubs = [hub for hub in self.major_hubs if hub in existing_airports]
+        
+        if self.verbose:
+            print(f"Prioritizing routes for {len(available_hubs)} major hubs")
+        
+        # Get routes involving major hubs (highest priority)
+        hub_routes_query = (
             select(
                 Route.route_id,
                 Route.source_airport_code,
@@ -143,33 +160,94 @@ class ComprehensiveFlightPopulator:
                 Route.airline_code.is_not(None),
                 Route.source_airport_code.in_(existing_airports),
                 Route.destination_airport_code.in_(existing_airports),
-                Route.airline_code.in_(existing_airlines)
+                Route.airline_code.in_(existing_airlines),
+                # At least one end must be a major hub
+                (Route.source_airport_code.in_(available_hubs)) | 
+                (Route.destination_airport_code.in_(available_hubs))
             )
-            .limit(sample_size)
+            .limit(int(max_routes * 0.7))  # 70% of routes should involve hubs
         )
         
-        routes = []
-        for route in session.exec(routes_query).all():
-            routes.append({
+        hub_routes = []
+        for route in session.exec(hub_routes_query).all():
+            # Calculate priority score based on hub involvement
+            priority_score = 0
+            if route.source_airport_code in self.major_hubs:
+                priority_score += 2
+            if route.destination_airport_code in self.major_hubs:
+                priority_score += 2
+            
+            # Boost score for routes between two hubs
+            if (route.source_airport_code in self.major_hubs and 
+                route.destination_airport_code in self.major_hubs):
+                priority_score += 3
+            
+            hub_routes.append({
                 'route_id': route.route_id,
                 'origin': route.source_airport_code,
                 'destination': route.destination_airport_code,
                 'airline': route.airline_code,
                 'codeshare': route.codeshare or False,
                 'stops': route.stops or 0,
-                'equipment': route.equipment
+                'equipment': route.equipment,
+                'priority_score': priority_score,
+                'is_hub_route': True
             })
         
+        # Get additional non-hub routes to fill remaining capacity
+        remaining_capacity = max_routes - len(hub_routes)
+        if remaining_capacity > 0:
+            non_hub_routes_query = (
+                select(
+                    Route.route_id,
+                    Route.source_airport_code,
+                    Route.destination_airport_code,
+                    Route.airline_code,
+                    Route.codeshare,
+                    Route.stops,
+                    Route.equipment
+                )
+                .where(
+                    Route.source_airport_code.is_not(None),
+                    Route.destination_airport_code.is_not(None),
+                    Route.airline_code.is_not(None),
+                    Route.source_airport_code.in_(existing_airports),
+                    Route.destination_airport_code.in_(existing_airports),
+                    Route.airline_code.in_(existing_airlines),
+                    # Neither end is a major hub
+                    ~(Route.source_airport_code.in_(available_hubs)),
+                    ~(Route.destination_airport_code.in_(available_hubs))
+                )
+                .limit(remaining_capacity)
+            )
+            
+            for route in session.exec(non_hub_routes_query).all():
+                hub_routes.append({
+                    'route_id': route.route_id,
+                    'origin': route.source_airport_code,
+                    'destination': route.destination_airport_code,
+                    'airline': route.airline_code,
+                    'codeshare': route.codeshare or False,
+                    'stops': route.stops or 0,
+                    'equipment': route.equipment,
+                    'priority_score': 1,  # Lower priority
+                    'is_hub_route': False
+                })
+        
+        # Sort by priority score (highest first)
+        hub_routes.sort(key=lambda x: x['priority_score'], reverse=True)
+        
         if self.verbose:
-            print(f"Selected {len(routes)} valid routes for flight generation")
-        return routes
+            hub_count = sum(1 for r in hub_routes if r['is_hub_route'])
+            print(f"Selected {len(hub_routes)} routes: {hub_count} hub routes, {len(hub_routes) - hub_count} non-hub routes")
+        
+        return hub_routes
     
     def calculate_daily_flights(self, route: Dict[str, Any], date: datetime, distance_km: float) -> int:
-        """Calculate number of flights for a route on a specific date based on updated flight rules"""
+        """Calculate number of flights for a route on a specific date"""
         
         origin_code = route['origin']
         dest_code = route['destination']
-        airline_code = route['airline']
         
         # Get airport tiers for both origin and destination
         origin_routes = self._route_counts_cache.get(origin_code, 0)
@@ -181,92 +259,219 @@ class ComprehensiveFlightPopulator:
         # Use the higher tier (lower tier number) for frequency calculation
         route_tier = origin_tier if origin_tier['min_routes'] >= dest_tier['min_routes'] else dest_tier
         
-        # Distance-based frequency adjustments per flight rules (REDUCED for 1000 flights/day limit)
+        # Base flight frequency based on distance and tier
         if distance_km <= 1500:  # Short-haul
             if route_tier['min_routes'] >= 500:  # Tier 1
-                base_flights = random.uniform(2, 4)  # REDUCED from 8-15
+                base_flights = random.uniform(4, 8)
             elif route_tier['min_routes'] >= 200:  # Tier 2
-                base_flights = random.uniform(1, 2)  # REDUCED from 4-8
+                base_flights = random.uniform(2, 4)
             elif route_tier['min_routes'] >= 50:  # Tier 3
-                base_flights = random.uniform(0.5, 1)  # REDUCED from 2-4
+                base_flights = random.uniform(1, 2)
             elif route_tier['min_routes'] >= 10:  # Tier 4
-                base_flights = random.uniform(0.2, 0.5)  # REDUCED: 1-3 per week
+                base_flights = random.uniform(0.4, 1)
             else:  # Tier 5
-                base_flights = random.uniform(0.1, 0.3)  # REDUCED: 1-2 per week
+                base_flights = random.uniform(0.2, 0.6)
         elif distance_km <= 4000:  # Medium-haul
             if route_tier['min_routes'] >= 500:  # Tier 1
-                base_flights = random.uniform(1, 2)  # REDUCED from 4-8
+                base_flights = random.uniform(2, 4)
             elif route_tier['min_routes'] >= 200:  # Tier 2
-                base_flights = random.uniform(0.5, 1)  # REDUCED from 2-4
+                base_flights = random.uniform(1, 2)
             elif route_tier['min_routes'] >= 50:  # Tier 3
-                base_flights = random.uniform(0.2, 0.5)  # REDUCED from 1-2
+                base_flights = random.uniform(0.4, 1)
             elif route_tier['min_routes'] >= 10:  # Tier 4
-                base_flights = random.uniform(0.1, 0.3)  # REDUCED: 1-2 per week
+                base_flights = random.uniform(0.2, 0.5)
             else:  # Tier 5
-                base_flights = 0  # No medium-haul for Tier 5
+                base_flights = 0
         else:  # Long-haul (4000+ km)
             if route_tier['min_routes'] >= 500:  # Tier 1
-                base_flights = random.uniform(0.3, 0.8)  # REDUCED from 1-3
+                base_flights = random.uniform(0.5, 1.5)
             elif route_tier['min_routes'] >= 200:  # Tier 2
-                base_flights = random.uniform(0.2, 0.5)  # REDUCED: 1-3 per week
+                base_flights = random.uniform(0.3, 0.8)
             elif route_tier['min_routes'] >= 50:  # Tier 3
-                base_flights = random.uniform(0.1, 0.3)  # REDUCED: 1-2 per week (seasonal)
+                base_flights = random.uniform(0.2, 0.5)
             else:  # Tier 4-5
-                base_flights = 0  # Charter/seasonal only
+                base_flights = 0
+        
+        # Major hub boost - significantly increase flights for hub routes
+        if route['is_hub_route']:
+            hub_multiplier = 1.5  # 50% more flights for hub routes
+            if (origin_code in self.major_hubs and dest_code in self.major_hubs):
+                hub_multiplier = 2.0  # 100% more for hub-to-hub routes
+            base_flights *= hub_multiplier
         
         # Apply seasonal multiplier
         seasonal_mult = self.config.get_seasonal_multiplier(date.month)
         
-        # Enhanced seasonal boost for tourism routes (long-haul)
-        if distance_km > 4000:
-            seasonal_mult *= 1.2  # Tourism boost
-        
-        # Apply day of week multiplier with distance consideration
+        # Apply day of week multiplier
         dow_mult = self.config.DAY_OF_WEEK_MULTIPLIERS[date.weekday()]
         
-        # Business routes (short/medium haul) have stronger weekday patterns
-        if distance_km <= 4000:
-            if date.weekday() < 5:  # Weekdays
-                dow_mult *= 1.1
-            else:  # Weekends
-                dow_mult *= 0.9
-        
         # Apply airline-specific patterns
-        airline_pattern = self.config.get_airline_pattern(airline_code)
+        airline_pattern = self.config.get_airline_pattern(route['airline'])
         airline_mult = airline_pattern['frequency_boost']
         
         # Codeshare routes have reduced frequency
         codeshare_mult = 0.7 if route['codeshare'] else 1.0
         
-        # Route efficiency scoring (simplified)
-        # Higher tier destinations get priority
-        tier_priority = 1.0
-        if route_tier['min_routes'] >= 500:
-            tier_priority = 1.2
-        elif route_tier['min_routes'] >= 200:
-            tier_priority = 1.1
-        elif route_tier['min_routes'] < 50:
-            tier_priority = 0.8
-        
         # Calculate final flight count
-        total_flights = base_flights * seasonal_mult * dow_mult * airline_mult * codeshare_mult * tier_priority
-        
-        # Apply global flight reduction factor for 100M bookings target
-        total_flights *= self.flight_reduction_factor
+        total_flights = base_flights * seasonal_mult * dow_mult * airline_mult * codeshare_mult
         
         # Convert to integer with probabilistic rounding
         flights_today = int(total_flights)
         if random.random() < (total_flights - flights_today):
             flights_today += 1
         
-        # Ensure we don't exceed reasonable daily limits per route
-        # Max 10 flights per route per day to help stay under 1000 total daily flights
-        flights_today = min(flights_today, 10)
+        # Ensure reasonable daily limits per route
+        flights_today = min(flights_today, 15)  # Max 15 flights per route per day
         
         return max(0, flights_today)
     
+    def estimate_distance_and_duration(self, origin: str, destination: str) -> Tuple[float, timedelta]:
+        """Estimate distance and flight duration between airports"""
+        
+        if origin == destination:
+            return 0.0, timedelta(hours=1)
+        
+        # Enhanced distance estimation for major hubs
+        hub_distances = {
+            # North American hubs
+            ('ATL', 'ORD'): 945, ('ATL', 'LAX'): 3135, ('ATL', 'DFW'): 1159,
+            ('ATL', 'JFK'): 1200, ('ORD', 'LAX'): 2802, ('ORD', 'DFW'): 1290,
+            ('ORD', 'JFK'): 1185, ('LAX', 'DFW'): 1991, ('LAX', 'JFK'): 3944,
+            ('DFW', 'JFK'): 2176, ('ATL', 'MCO'): 663, ('ATL', 'LAS'): 2831,
+            
+            # European hubs
+            ('LHR', 'CDG'): 344, ('LHR', 'FRA'): 659, ('LHR', 'AMS'): 370,
+            ('CDG', 'FRA'): 479, ('CDG', 'AMS'): 431, ('FRA', 'AMS'): 364,
+            ('LHR', 'FCO'): 1435, ('CDG', 'MAD'): 1054, ('FRA', 'MUC'): 304,
+            
+            # Transatlantic
+            ('LHR', 'JFK'): 5585, ('CDG', 'JFK'): 5837, ('FRA', 'JFK'): 6194,
+            ('LHR', 'ATL'): 6900, ('CDG', 'ATL'): 7000, ('FRA', 'ATL'): 7300,
+            
+            # Transpacific
+            ('LAX', 'NRT'): 8815, ('SFO', 'NRT'): 8614, ('LAX', 'ICN'): 9600,
+            ('LAX', 'PVG'): 11129, ('SFO', 'HKG'): 13593,
+            
+            # Asia-Europe
+            ('LHR', 'HKG'): 9648, ('FRA', 'PEK'): 7365, ('CDG', 'NRT'): 9714,
+        }
+        
+        # Check if we have a known distance for this route
+        route_key = (origin, destination)
+        reverse_key = (destination, origin)
+        
+        if route_key in hub_distances:
+            distance_km = hub_distances[route_key]
+        elif reverse_key in hub_distances:
+            distance_km = hub_distances[reverse_key]
+        else:
+            # Fall back to continent-based estimation
+            continent_codes = {
+                'A': 'North America', 'B': 'North America', 'C': 'North America', 'D': 'North America',
+                'E': 'Europe', 'F': 'Europe', 'G': 'Europe', 'H': 'Europe',
+                'I': 'Asia', 'J': 'Asia', 'K': 'Asia', 'L': 'Asia',
+                'M': 'Oceania', 'N': 'Oceania', 'O': 'Oceania', 'P': 'South America',
+                'Q': 'South America', 'R': 'South America', 'S': 'Africa', 'T': 'Africa',
+                'U': 'Europe', 'V': 'Asia', 'W': 'Asia', 'X': 'Other',
+                'Y': 'Other', 'Z': 'Asia'
+            }
+            
+            origin_continent = continent_codes.get(origin[0] if origin else 'X', 'Other')
+            dest_continent = continent_codes.get(destination[0] if destination else 'X', 'Other')
+            
+            if origin_continent == dest_continent:
+                if origin[:2] == destination[:2]:
+                    distance_km = random.uniform(200, 1200)  # Same country/region
+                else:
+                    distance_km = random.uniform(800, 3000)  # Same continent
+            else:
+                # Different continents
+                intercontinental_distances = {
+                    ('North America', 'Europe'): (5500, 8000),
+                    ('North America', 'Asia'): (8000, 12000),
+                    ('Europe', 'Asia'): (3000, 9000),
+                    ('North America', 'South America'): (3000, 8000),
+                    ('Europe', 'Africa'): (1500, 6000),
+                    ('Asia', 'Oceania'): (3000, 8000),
+                }
+                
+                pair = (origin_continent, dest_continent)
+                reverse_pair = (dest_continent, origin_continent)
+                
+                if pair in intercontinental_distances:
+                    min_dist, max_dist = intercontinental_distances[pair]
+                elif reverse_pair in intercontinental_distances:
+                    min_dist, max_dist = intercontinental_distances[reverse_pair]
+                else:
+                    min_dist, max_dist = 6000, 12000
+                
+                distance_km = random.uniform(min_dist, max_dist)
+        
+        # Calculate duration
+        if distance_km <= 1500:  # Short-haul
+            avg_speed = 600
+            overhead = 30
+        elif distance_km <= 4000:  # Medium-haul
+            avg_speed = 700
+            overhead = 45
+        else:  # Long-haul
+            avg_speed = 800
+            overhead = 60
+        
+        flight_time_hours = distance_km / avg_speed
+        total_minutes = int(flight_time_hours * 60) + overhead
+        total_minutes = max(45, min(total_minutes, 960))  # 45 min to 16 hours
+        
+        return distance_km, timedelta(minutes=total_minutes)
+    
+    def select_aircraft(self, route: Dict[str, Any], distance_km: float, daily_flights: int) -> Optional[Dict[str, Any]]:
+        """Select appropriate aircraft based on distance and demand"""
+        
+        if not self._aircraft_cache:
+            return None
+        
+        # Get aircraft category based on distance
+        aircraft_category = self.config.get_aircraft_category_by_distance(distance_km)
+        target_capacity_range = aircraft_category['capacity_range']
+        
+        # Adjust capacity based on hub status and frequency
+        min_capacity, max_capacity = target_capacity_range
+        
+        # Hub routes typically use larger aircraft
+        if route['is_hub_route']:
+            min_capacity = int(min_capacity * 1.2)
+            max_capacity = int(max_capacity * 1.3)
+        
+        # High-frequency routes use smaller aircraft
+        if daily_flights > 6:
+            max_capacity = int(max_capacity * 0.8)
+        elif daily_flights > 3:
+            max_capacity = int(max_capacity * 0.9)
+        
+        # Filter aircraft by capacity range
+        suitable_aircraft = [
+            aircraft for aircraft in self._aircraft_cache
+            if (min_capacity <= aircraft['capacity'] <= max_capacity)
+        ]
+        
+        if not suitable_aircraft:
+            # Expand search if no suitable aircraft found
+            broader_min = max(50, min_capacity - 50)
+            broader_max = min(500, max_capacity + 100)
+            
+            suitable_aircraft = [
+                aircraft for aircraft in self._aircraft_cache
+                if (broader_min <= aircraft['capacity'] <= broader_max)
+            ]
+        
+        if suitable_aircraft:
+            return random.choice(suitable_aircraft)
+        
+        # Final fallback
+        return random.choice(self._aircraft_cache) if self._aircraft_cache else None
+    
     def generate_departure_times(self, num_flights: int, airline_code: str) -> List[time]:
-        """Generate realistic departure times based on airline patterns"""
+        """Generate realistic departure times"""
         
         if num_flights == 0:
             return []
@@ -294,172 +499,13 @@ class ComprehensiveFlightPopulator:
         selected_times = random.sample(available_times, num_flights)
         return sorted(selected_times)
     
-    def estimate_distance_and_duration(self, origin: str, destination: str) -> Tuple[float, timedelta]:
-        """Estimate distance and flight duration between airports"""
-        
-        if origin == destination:
-            return 0.0, timedelta(hours=1)
-        
-        # Enhanced distance estimation based on airport code patterns and geography
-        # This is still simplified - in production would use actual coordinates
-        
-        # Continental patterns (very rough approximation)
-        continent_codes = {
-            'A': 'North America', 'B': 'North America', 'C': 'North America', 'D': 'North America',
-            'E': 'Europe', 'F': 'Europe', 'G': 'Europe', 'H': 'Europe',
-            'I': 'Asia', 'J': 'Asia', 'K': 'Asia', 'L': 'Asia',
-            'M': 'Oceania', 'N': 'Oceania', 'O': 'Oceania', 'P': 'South America',
-            'Q': 'South America', 'R': 'South America', 'S': 'Africa', 'T': 'Africa',
-            'U': 'Europe', 'V': 'Asia', 'W': 'Asia', 'X': 'Other',
-            'Y': 'Other', 'Z': 'Asia'
-        }
-        
-        origin_continent = continent_codes.get(origin[0] if origin else 'X', 'Other')
-        dest_continent = continent_codes.get(destination[0] if destination else 'X', 'Other')
-        
-        # Distance estimation based on continental patterns
-        if origin_continent == dest_continent:
-            if origin[:2] == destination[:2]:
-                # Same country/region
-                distance_km = random.uniform(200, 1200)  # Short domestic
-            else:
-                # Same continent, different countries
-                distance_km = random.uniform(800, 3000)  # Medium continental
-        else:
-            # Different continents
-            intercontinental_distances = {
-                ('North America', 'Europe'): (5500, 8000),
-                ('North America', 'Asia'): (8000, 12000),
-                ('Europe', 'Asia'): (3000, 9000),
-                ('North America', 'South America'): (3000, 8000),
-                ('Europe', 'Africa'): (1500, 6000),
-                ('Asia', 'Oceania'): (3000, 8000),
-            }
-            
-            # Get distance range for continent pair
-            pair = (origin_continent, dest_continent)
-            reverse_pair = (dest_continent, origin_continent)
-            
-            if pair in intercontinental_distances:
-                min_dist, max_dist = intercontinental_distances[pair]
-            elif reverse_pair in intercontinental_distances:
-                min_dist, max_dist = intercontinental_distances[reverse_pair]
-            else:
-                # Default long-haul
-                min_dist, max_dist = 6000, 12000
-            
-            distance_km = random.uniform(min_dist, max_dist)
-        
-        # Calculate duration using flight rules speed estimates
-        if distance_km <= 1500:  # Short-haul
-            avg_speed = 600  # km/h
-            overhead = 30    # minutes
-        elif distance_km <= 4000:  # Medium-haul
-            avg_speed = 700  # km/h
-            overhead = 45    # minutes
-        else:  # Long-haul
-            avg_speed = 800  # km/h
-            overhead = 60    # minutes
-        
-        flight_time_hours = distance_km / avg_speed
-        total_minutes = int(flight_time_hours * 60) + overhead
-        
-        # Ensure reasonable bounds
-        total_minutes = max(45, min(total_minutes, 960))  # 45 min to 16 hours
-        
-        return distance_km, timedelta(minutes=total_minutes)
-    
-    def select_aircraft(self, route: Dict[str, Any], distance_km: float, daily_flights: int) -> Optional[Dict[str, Any]]:
-        """Select appropriate aircraft based on distance and demand following flight rules"""
-        
-        if not self._aircraft_cache:
-            return None
-        
-        # Estimate passenger demand based on route tier and daily flights
-        origin_routes = self._route_counts_cache.get(route['origin'], 0)
-        dest_routes = self._route_counts_cache.get(route['destination'], 0)
-        max_routes = max(origin_routes, dest_routes)
-        
-        # Base passenger estimate
-        if max_routes >= 500:  # Tier 1
-            base_passengers = 180
-        elif max_routes >= 200:  # Tier 2
-            base_passengers = 140
-        elif max_routes >= 50:  # Tier 3
-            base_passengers = 100
-        else:  # Tier 4-5
-            base_passengers = 70
-        
-        # Adjust for flight frequency (more flights = smaller aircraft)
-        if daily_flights > 6:
-            base_passengers = int(base_passengers * 0.7)
-        elif daily_flights > 3:
-            base_passengers = int(base_passengers * 0.85)
-        
-        # Aircraft selection based on distance rules from flight_rules.md
-        aircraft_category = self.config.get_aircraft_category_by_distance(distance_km)
-        target_capacity_range = aircraft_category['capacity_range']
-        
-        # Adjust capacity based on passenger demand and frequency
-        min_capacity, max_capacity = target_capacity_range
-        
-        # For high-frequency routes, prefer smaller aircraft
-        if daily_flights > 6:
-            max_capacity = int(max_capacity * 0.8)
-        elif daily_flights > 3:
-            max_capacity = int(max_capacity * 0.9)
-        
-        # For low-demand routes, prefer smaller aircraft within category
-        if base_passengers < min_capacity * 0.6:
-            max_capacity = int(min_capacity * 1.2)
-        
-        # Ensure we stay within reasonable bounds
-        target_capacity_range = (max(30, min_capacity), min(500, max_capacity))
-        
-        # Filter aircraft by capacity range
-        suitable_aircraft = [
-            aircraft for aircraft in self._aircraft_cache
-            if (target_capacity_range[0] <= aircraft['capacity'] <= target_capacity_range[1])
-        ]
-        
-        # If no suitable aircraft in range, expand search
-        if not suitable_aircraft:
-            # Try broader capacity range
-            broader_min = max(50, target_capacity_range[0] - 50)
-            broader_max = min(500, target_capacity_range[1] + 100)
-            
-            suitable_aircraft = [
-                aircraft for aircraft in self._aircraft_cache
-                if (broader_min <= aircraft['capacity'] <= broader_max)
-            ]
-        
-        if suitable_aircraft:
-            # Prefer aircraft closer to estimated passenger demand
-            def capacity_score(aircraft):
-                capacity = aircraft['capacity']
-                # Score based on how close capacity is to passenger demand
-                if capacity >= base_passengers:
-                    return 1.0 / (1.0 + (capacity - base_passengers) / base_passengers)
-                else:
-                    return capacity / base_passengers
-            
-            # Sort by capacity score and add some randomness
-            suitable_aircraft.sort(key=capacity_score, reverse=True)
-            
-            # Select from top 30% with some randomness
-            top_count = max(1, len(suitable_aircraft) // 3)
-            return random.choice(suitable_aircraft[:top_count])
-        
-        # Final fallback to any aircraft
-        return random.choice(self._aircraft_cache) if self._aircraft_cache else None
-    
     def generate_flights_for_route_date(self, route: Dict[str, Any], date: datetime) -> List[Flight]:
         """Generate all flights for a specific route on a specific date"""
         
         # Estimate distance and duration
         distance_km, duration = self.estimate_distance_and_duration(route['origin'], route['destination'])
         
-        # Calculate number of flights based on distance
+        # Calculate number of flights
         num_flights = self.calculate_daily_flights(route, date, distance_km)
         
         if num_flights == 0:
@@ -468,7 +514,7 @@ class ComprehensiveFlightPopulator:
         # Generate departure times
         departure_times = self.generate_departure_times(num_flights, route['airline'])
         
-        # Select appropriate aircraft based on distance and demand
+        # Select appropriate aircraft
         aircraft = self.select_aircraft(route, distance_km, num_flights)
         
         if not aircraft:
@@ -478,26 +524,21 @@ class ComprehensiveFlightPopulator:
         flights = []
         
         for i, departure_time in enumerate(departure_times):
-            # Create departure datetime
             departure_dt = datetime.combine(date.date(), departure_time)
             arrival_dt = departure_dt + duration
             
-            # Generate flight number (max 8 characters) with better logic
+            # Generate flight number
             airline_code = route['airline']
-            
-            # Create base number from route and date for consistency
             base_number = ((route['route_id'] + date.timetuple().tm_yday) % 900) + 100
             
-            # For multiple daily flights, use different suffixes
             if len(departure_times) > 1:
-                flight_suffix = chr(65 + i) if i < 26 else str(i)  # A, B, C... or numbers
+                flight_suffix = chr(65 + i) if i < 26 else str(i)
                 flight_number = f"{airline_code}{base_number}{flight_suffix}"
             else:
                 flight_number = f"{airline_code}{base_number}"
             
             # Ensure flight number is within 8 character limit
             if len(flight_number) > 8:
-                # Truncate airline code if needed
                 available_chars = 8 - len(str(base_number)) - (1 if len(departure_times) > 1 else 0)
                 airline_code_short = airline_code[:available_chars]
                 
@@ -506,12 +547,6 @@ class ComprehensiveFlightPopulator:
                     flight_number = f"{airline_code_short}{base_number}{flight_suffix}"
                 else:
                     flight_number = f"{airline_code_short}{base_number}"
-            
-            # Validate flight number length
-            if len(flight_number) > 8:
-                # Emergency fallback - use just airline + 3 digits
-                emergency_num = (base_number + i) % 1000
-                flight_number = f"{airline_code[:5]}{emergency_num:03d}"
             
             flight = Flight(
                 flightno=flight_number,
@@ -528,7 +563,7 @@ class ComprehensiveFlightPopulator:
         return flights
     
     def populate_flights(self, start_date: datetime, end_date: datetime, 
-                        batch_size: int = 1000, max_routes: int = 1000, max_daily_flights: int = 1000) -> int:
+                        batch_size: int = 1000, max_routes: int = 2000) -> int:
         """Populate flights for the specified date range"""
         
         if self.verbose:
@@ -540,14 +575,10 @@ class ComprehensiveFlightPopulator:
             
             if not self._airport_cache or not self._airline_cache or not self._aircraft_cache:
                 print("❌ Insufficient data in database for flight generation")
-                if self.verbose:
-                    print(f"   Airports: {len(self._airport_cache)}")
-                    print(f"   Airlines: {len(self._airline_cache)}")
-                    print(f"   Aircraft: {len(self._aircraft_cache)}")
                 return 0
             
-            # Get route sample
-            routes = self.get_routes_sample(session, max_routes)
+            # Get prioritized routes (hub routes first)
+            routes = self.get_prioritized_routes(session, max_routes)
             
             if not routes:
                 print("❌ No valid routes found for flight generation")
@@ -560,7 +591,8 @@ class ComprehensiveFlightPopulator:
             
             if self.verbose:
                 print(f"Processing {total_days} days with {len(routes)} routes")
-                print("Flight generation progress:")
+                hub_routes = sum(1 for r in routes if r['is_hub_route'])
+                print(f"Route breakdown: {hub_routes} hub routes, {len(routes) - hub_routes} non-hub routes")
             
             # Import tqdm for progress bar
             try:
@@ -573,7 +605,7 @@ class ComprehensiveFlightPopulator:
             if use_progress_bar:
                 pbar = tqdm(
                     total=total_days,
-                    desc="🛫 Generating flights",
+                    desc="🛫 Generating hub flights",
                     unit="day",
                     colour='blue',
                     bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} days ({percentage:3.0f}%) [{elapsed}<{remaining}] {postfix}'
@@ -585,25 +617,16 @@ class ComprehensiveFlightPopulator:
                     
                     # Generate flights for each route on this date
                     for route in routes:
-                        # Check if we've reached the daily flight limit
-                        if len(daily_flights) >= max_daily_flights:
-                            break
-                            
                         try:
                             route_flights = self.generate_flights_for_route_date(route, current_date)
-                            # Only add flights if we don't exceed the daily limit
-                            remaining_capacity = max_daily_flights - len(daily_flights)
-                            if remaining_capacity > 0:
-                                daily_flights.extend(route_flights[:remaining_capacity])
+                            daily_flights.extend(route_flights)
                         except Exception as e:
-                            # Log route-specific errors but continue
-                            if days_processed == 0 and self.verbose:  # Only log on first day to avoid spam
+                            if days_processed == 0 and self.verbose:
                                 print(f"   Warning: Error generating flights for route {route['origin']}-{route['destination']}: {e}")
                     
                     # Batch insert
                     if daily_flights:
                         try:
-                            # Insert in batches
                             for i in range(0, len(daily_flights), batch_size):
                                 batch = daily_flights[i:i + batch_size]
                                 session.add_all(batch)
@@ -642,24 +665,17 @@ class ComprehensiveFlightPopulator:
                 if use_progress_bar:
                     pbar.close()
                 print(f"\n⚠ Flight generation interrupted by user")
-                if self.verbose:
-                    print(f"   Processed {days_processed}/{total_days} days")
-                    print(f"   Created {total_flights:,} flights so far")
                 return total_flights
             except Exception as e:
                 if use_progress_bar:
                     pbar.close()
                 print(f"\n❌ Fatal error during flight generation: {e}")
-                if self.verbose:
-                    print(f"   Processed {days_processed}/{total_days} days")
-                    print(f"   Created {total_flights:,} flights before error")
                 raise
     
     def clear_flights_in_range(self, start_date: datetime, end_date: datetime) -> int:
         """Clear existing flights in the specified date range"""
         
         with Session(self.db_manager.engine) as session:
-            # Count existing flights
             count_query = select(func.count(Flight.flight_id)).where(
                 Flight.departure >= start_date,
                 Flight.departure <= end_date
@@ -670,11 +686,10 @@ class ComprehensiveFlightPopulator:
                 if self.verbose:
                     print(f"Clearing {existing_count:,} existing flights in date range...")
                 
-                # Delete in batches to avoid memory issues
+                # Delete in batches
                 batch_size = 10000
                 deleted_total = 0
                 
-                # Import tqdm for progress bar
                 try:
                     from tqdm import tqdm
                     use_progress_bar = not self.verbose and existing_count > 1000
@@ -718,8 +733,6 @@ class ComprehensiveFlightPopulator:
                 if use_progress_bar:
                     pbar.close()
                 
-                if self.verbose:
-                    print(f"Cleared {deleted_total:,} flights")
                 return deleted_total
             
             return 0
@@ -729,16 +742,13 @@ def main():
     """Main function"""
     import argparse
     
-    # Parse command line arguments
-    parser = argparse.ArgumentParser(description='Comprehensive Flight Population Script')
+    parser = argparse.ArgumentParser(description='Realistic Flight Population Script (Hub-Prioritized)')
     parser.add_argument('--verbose', '-v', action='store_true', 
                        help='Enable verbose output (default: progress bar only)')
     parser.add_argument('--reset-db', action='store_true',
                        help='Reset database without prompting')
     parser.add_argument('--no-reset', action='store_true',
                        help='Keep existing data without prompting')
-    parser.add_argument('--flight-reduction', type=float, default=0.2,
-                       help='Flight reduction factor for 100M bookings target (default: 0.2 = 80%% reduction)')
     args = parser.parse_args()
     
     if not DEPENDENCIES_AVAILABLE:
@@ -752,17 +762,18 @@ def main():
     load_dotenv()
     
     if args.verbose:
-        print("Comprehensive Flight Population Script")
-        print("=" * 40)
-        FlightConfig.print_configuration_summary()
+        print("Realistic Flight Population Script (Hub-Prioritized)")
+        print("=" * 50)
+        print("This script prioritizes routes involving major hub airports:")
+        print("ATL, ORD, LHR, CDG, FRA, LAX, DFW, JFK, AMS, and others")
     
-    # Initialize with flight reduction for 100M bookings target
+    # Initialize
     db_manager = DatabaseManager()
-    populator = ComprehensiveFlightPopulator(db_manager, verbose=args.verbose, flight_reduction_factor=args.flight_reduction)
+    populator = RealisticFlightPopulator(db_manager, verbose=args.verbose)
     
-    # Define date range - optimized for 2025 and first half of 2026
-    start_date = datetime(2025, 1, 1)  # Start of 2025
-    end_date = datetime(2026, 6, 30)   # End of first half of 2026
+    # Define date range
+    start_date = datetime(2025, 1, 1)
+    end_date = datetime(2026, 6, 30)
     
     if args.verbose:
         print(f"\nDate range: {start_date.date()} to {end_date.date()}")
@@ -775,30 +786,24 @@ def main():
     elif args.no_reset:
         reset_db = False
     else:
-        # Only ask about database reset
         response = input("Reset existing flight data? (y/N): ")
         reset_db = response.lower() == 'y'
     
     try:
         cleared_count = 0
         if reset_db:
-            if args.verbose:
-                print("\nClearing existing flights...")
             cleared_count = populator.clear_flights_in_range(start_date, end_date)
         
-        # Generate new flights with daily limit of 1000 flights
-        if args.verbose:
-            print("\nGenerating flights...")
-            print("Daily flight limit: 1000 flights per day")
-        created_count = populator.populate_flights(start_date, end_date, max_daily_flights=1000)
+        # Generate new flights
+        created_count = populator.populate_flights(start_date, end_date)
         
-        print(f"✅ Flight population completed!")
+        print(f"✅ Hub-prioritized flight population completed!")
         if args.verbose:
             print(f"   Flights cleared: {cleared_count:,}")
             print(f"   Flights created: {created_count:,}")
             print(f"   Net change: {created_count - cleared_count:,}")
         else:
-            print(f"   Created {created_count:,} flights")
+            print(f"   Created {created_count:,} flights with hub priority")
         
         return 0
         

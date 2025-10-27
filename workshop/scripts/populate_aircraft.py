@@ -168,46 +168,46 @@ class AircraftPopulator:
         # Major US/International airlines (800+ aircraft)
         if any(keyword in airline_name for keyword in ['american airlines', 'delta air', 'united airlines', 'southwest']):
             return {
-                'wide_body': 40,      # Reduced wide-body fleet
-                'narrow_body': 500,   # Main domestic/short-haul fleet
-                'regional': 200,      # Increased regional routes
-                'small': 20           # Charter/special ops
+                'wide_body': 80,      # Increased wide-body fleet for international routes
+                'narrow_body': 600,   # Main domestic/short-haul fleet
+                'regional': 100,      # Reduced regional routes
+                'small': 10           # Minimal charter/special ops
             }
         
         # Large international carriers (400-800 aircraft)
         elif any(keyword in airline_name for keyword in ['lufthansa', 'air france', 'british airways', 'emirates', 'qatar', 'singapore', 'klm', 'turkish']):
             return {
-                'wide_body': 60,      # Reduced wide-body focus
-                'narrow_body': 250,   # European/domestic routes
-                'regional': 120,      # Increased regional connections
-                'small': 10           # VIP/charter
+                'wide_body': 120,     # Increased wide-body focus for international routes
+                'narrow_body': 300,   # European/domestic routes
+                'regional': 60,       # Reduced regional connections
+                'small': 5            # Minimal VIP/charter
             }
         
         # Medium international airlines (200-400 aircraft)
         elif any(keyword in airline_name for keyword in ['air canada', 'qantas', 'japan airlines', 'korean air', 'cathay', 'virgin atlantic', 'alitalia']):
             return {
-                'wide_body': 30,      # Reduced international routes
-                'narrow_body': 150,   # Domestic/regional international
-                'regional': 80,       # Increased regional feeders
-                'small': 10           # Special ops
+                'wide_body': 60,      # Increased international routes
+                'narrow_body': 180,   # Domestic/regional international
+                'regional': 40,       # Reduced regional feeders
+                'small': 5            # Minimal special ops
             }
         
         # Low-cost carriers (100-300 aircraft)
         elif any(keyword in airline_name for keyword in ['ryanair', 'easyjet', 'jetblue', 'spirit', 'frontier', 'allegiant', 'wizz']):
             return {
-                'wide_body': 2,       # Very limited long-haul
-                'narrow_body': 140,   # Main fleet
-                'regional': 40,       # Smaller markets
-                'small': 8            # Point-to-point routes
+                'wide_body': 10,      # Some long-haul routes
+                'narrow_body': 160,   # Main fleet - increased
+                'regional': 20,       # Reduced smaller markets
+                'small': 3            # Minimal point-to-point routes
             }
         
         # Regional airlines (50-150 aircraft)
         elif any(keyword in airline_name for keyword in ['regional', 'express', 'commuter', 'connection', 'link', 'eagle', 'skywest']):
             return {
                 'wide_body': 0,       # No wide-body
-                'narrow_body': 15,    # Limited mainline
-                'regional': 60,       # Main regional fleet
-                'small': 40           # Smaller routes
+                'narrow_body': 40,    # Increased mainline fleet
+                'regional': 70,       # Main regional fleet
+                'small': 20           # Reduced smaller routes
             }
         
         # Cargo airlines (50-200 aircraft)
@@ -231,18 +231,18 @@ class AircraftPopulator:
         # Small/startup airlines (20-100 aircraft)
         elif any(keyword in airline_name for keyword in ['air', 'fly', 'wings', 'sky']):
             return {
-                'wide_body': 2,       # Very limited international
-                'narrow_body': 30,    # Main fleet
-                'regional': 35,       # Regional routes
-                'small': 15           # Niche routes
+                'wide_body': 5,       # Some international routes
+                'narrow_body': 50,    # Increased main fleet
+                'regional': 25,       # Reduced regional routes
+                'small': 8            # Reduced niche routes
             }
         
         # Default medium airline (50-150 aircraft)
         return {
-            'wide_body': 5,       # Reduced international
-            'narrow_body': 40,    # Main domestic fleet
-            'regional': 35,       # Regional connections
-            'small': 15           # Special routes
+            'wide_body': 15,      # Increased international
+            'narrow_body': 60,    # Increased main domestic fleet
+            'regional': 25,       # Reduced regional connections
+            'small': 8            # Reduced special routes
         }
     
     def generate_aircraft_fleet(self, airplane_types: List[Dict[str, Any]], 

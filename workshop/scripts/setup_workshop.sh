@@ -4,7 +4,7 @@
 # This script resets the database and imports all data from OpenFlights.org
 #
 # Usage: ./setup_workshop.sh [-s] [-v]
-#   -s    Step-by-step mode (wait for confirmation after each step)
+#   -s    Step-by-step mode (interactive: Enter to continue, 's' to skip, 'q' to quit)
 #   -v    Verbose mode (show detailed output)
 
 set -e  # Exit on any error
@@ -22,7 +22,7 @@ while getopts "sv" opt; do
             ;;
         \?)
             echo "Usage: $0 [-s] [-v]"
-            echo "  -s    Step-by-step mode (wait for confirmation after each step)"
+            echo "  -s    Step-by-step mode (interactive: Enter to continue, 's' to skip, 'q' to quit)"
             echo "  -v    Verbose mode (show detailed output)"
             exit 1
             ;;
@@ -64,8 +64,28 @@ print_header() {
 wait_for_confirmation() {
     if [ "$STEP_BY_STEP" = true ]; then
         echo
-        read -p "Press Enter to continue to the next step, or Ctrl+C to exit..." -r
-        echo
+        while true; do
+            read -p "Press Enter to continue, 's' to skip this step, or 'q' to quit: " -r
+            case $REPLY in
+                "")
+                    echo
+                    return 0  # Continue with the step
+                    ;;
+                [Ss])
+                    echo
+                    print_warning "Skipping this step..."
+                    return 1  # Skip the step
+                    ;;
+                [Qq])
+                    echo
+                    print_status "Setup cancelled by user"
+                    exit 0
+                    ;;
+                *)
+                    echo "Invalid option. Press Enter to continue, 's' to skip, or 'q' to quit."
+                    ;;
+            esac
+        done
     fi
 }
 
@@ -94,25 +114,31 @@ echo "  5. Download and import airlines data"
 echo "  6. Download and import airports data"
 echo "  7. Download and import routes data"
 echo "  8. Populate aircraft fleets"
-echo "  9. Populate flight schedules"
-echo "  10. Populate passenger data"
-echo "  11. Populate flight bookings"
+echo "  9. Populate flight schedules (2025 & first half 2026, max 1000 flights/day)"
+echo "  10. Populate passenger data (up to 1 million passengers)"
+echo "  11. Populate flight bookings (max 100 bookings per passenger)"
 echo
 if [ "$STEP_BY_STEP" = true ]; then
-    print_status "Running in step-by-step mode - you'll be prompted after each step"
+    print_status "Running in step-by-step mode - you can skip steps or quit at any time"
 fi
 if [ "$VERBOSE" = true ]; then
     print_status "Running in verbose mode - detailed output will be shown"
 fi
-print_warning "This will DELETE ALL EXISTING DATA in your database!"
-echo
-
-# Confirm with user
-read -p "Are you sure you want to continue? (y/N): " -n 1 -r
-echo
-if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-    print_status "Operation cancelled by user"
-    exit 0
+if [ "$STEP_BY_STEP" = false ]; then
+    print_warning "This will DELETE ALL EXISTING DATA in your database!"
+    echo
+    
+    # Confirm with user in non-interactive mode
+    read -p "Are you sure you want to continue? (y/N): " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        print_status "Operation cancelled by user"
+        exit 0
+    fi
+else
+    print_warning "Step 1 will DELETE ALL EXISTING DATA in your database!"
+    print_status "You can skip the database reset step if you want to keep existing data."
+    echo
 fi
 
 # Check if uv is available
@@ -140,25 +166,27 @@ fi
 print_header "Step 1: Resetting Database"
 print_status "Dropping all existing tables and creating fresh schema..."
 
-uv run python scripts/reset_database.py --yes
-if [ $? -ne 0 ]; then
-    print_error "Database reset failed"
-    exit 1
+if wait_for_confirmation; then
+    uv run python scripts/reset_database.py --yes
+    if [ $? -ne 0 ]; then
+        print_error "Database reset failed"
+        exit 1
+    fi
+    print_success "Database reset completed"
 fi
-print_success "Database reset completed"
-wait_for_confirmation
 
 # Step 2: Download Countries
 print_header "Step 2: Importing Countries Data"
 print_status "Downloading and importing countries from OpenFlights.org..."
 
-uv run python scripts/download_countries.py --yes
-if [ $? -ne 0 ]; then
-    print_error "Countries import failed"
-    exit 1
+if wait_for_confirmation; then
+    uv run python scripts/download_countries.py --yes
+    if [ $? -ne 0 ]; then
+        print_error "Countries import failed"
+        exit 1
+    fi
+    print_success "Countries data imported successfully"
 fi
-print_success "Countries data imported successfully"
-wait_for_confirmation
 
 # Step 3: Download Cities
 print_header "Step 3: Importing Cities Data"
@@ -167,58 +195,63 @@ echo "This will download ~160k cities with population data for flight frequency 
 echo "It may take several minutes to download and process."
 echo
 
-print_status "Downloading and importing cities from GeoNames..."
+if wait_for_confirmation; then
+    print_status "Downloading and importing cities from GeoNames..."
 
-# Use cities15000 dataset for good balance of coverage and performance
-uv run python scripts/download_cities.py --dataset cities15000 --verbose
-if [ $? -ne 0 ]; then
-    print_error "Cities import failed"
-    exit 1
+    # Use cities15000 dataset for good balance of coverage and performance
+    uv run python scripts/download_cities.py --dataset cities15000 --verbose
+    if [ $? -ne 0 ]; then
+        print_error "Cities import failed"
+        exit 1
+    fi
+    print_success "Cities data imported successfully"
 fi
-print_success "Cities data imported successfully"
-wait_for_confirmation
 
 # Step 4: Download Aircraft Types (Airplanes)
 print_header "Step 4: Importing Aircraft Types Data"
 print_status "Downloading and importing aircraft types from OpenFlights.org..."
 
-uv run python scripts/download_planes.py --yes
-if [ $? -ne 0 ]; then
-    print_error "Aircraft types import failed"
-    exit 1
+if wait_for_confirmation; then
+    uv run python scripts/download_planes.py --yes
+    if [ $? -ne 0 ]; then
+        print_error "Aircraft types import failed"
+        exit 1
+    fi
+    print_success "Aircraft types data imported successfully"
 fi
-print_success "Aircraft types data imported successfully"
-wait_for_confirmation
 
 # Step 5: Download Airlines
 print_header "Step 5: Importing Airlines Data"
 print_status "Downloading and importing airlines from OpenFlights.org..."
 
-uv run python scripts/download_airlines.py --yes
-if [ $? -ne 0 ]; then
-    print_error "Airlines import failed"
-    exit 1
+if wait_for_confirmation; then
+    uv run python scripts/download_airlines.py --yes
+    if [ $? -ne 0 ]; then
+        print_error "Airlines import failed"
+        exit 1
+    fi
+    print_success "Airlines data imported successfully"
 fi
-print_success "Airlines data imported successfully"
-wait_for_confirmation
 
 # Step 6: Download Airports
 print_header "Step 6: Importing Airports Data"
 print_status "Downloading and importing airports from OpenFlights.org..."
 
-echo "y" | uv run python scripts/download_airports.py --yes
-if [ $? -ne 0 ]; then
-    print_error "Airports import failed"
-    exit 1
+if wait_for_confirmation; then
+    echo "y" | uv run python scripts/download_airports.py --yes
+    if [ $? -ne 0 ]; then
+        print_error "Airports import failed"
+        exit 1
+    fi
+    print_success "Airports data imported successfully"
 fi
-print_success "Airports data imported successfully"
-wait_for_confirmation
 
 # Step 7: Create City-Airport Relations
 print_header "Step 7: Creating City-Airport Relationships"
 
-# Check if cities were imported
-cities_imported=$(uv run python -c "
+if wait_for_confirmation; then
+    # Check if cities were imported
+    cities_imported=$(uv run python -c "
 import sys, os
 sys.path.append('.')
 from models.database import DatabaseManager
@@ -233,37 +266,38 @@ except:
     print(0)
 " 2>/dev/null)
 
-if [ "$cities_imported" -gt 0 ]; then
-    print_status "Creating relationships between cities and airports..."
-    echo "This step maps airports to nearby cities for flight planning analysis."
-    echo
-    
-    uv run python scripts/create_city_airport_relations.py --max-distance 100
-    if [ $? -ne 0 ]; then
-        print_warning "City-airport relationships creation failed, but continuing..."
+    if [ "$cities_imported" -gt 0 ]; then
+        print_status "Creating relationships between cities and airports..."
+        echo "This step maps airports to nearby cities for flight planning analysis."
+        echo
+        
+        uv run python scripts/create_city_airport_relations.py --max-distance 100
+        if [ $? -ne 0 ]; then
+            print_warning "City-airport relationships creation failed, but continuing..."
+        else
+            print_success "City-airport relationships created successfully"
+        fi
     else
-        print_success "City-airport relationships created successfully"
+        print_status "Skipping city-airport relationships (cities not imported)"
     fi
-else
-    print_status "Skipping city-airport relationships (cities not imported)"
 fi
-wait_for_confirmation
 
 # Step 8: Download Routes
 print_header "Step 8: Importing Routes Data"
 print_status "Downloading and importing routes from OpenFlights.org..."
 
-if [ "$VERBOSE" = true ]; then
-    echo "y" | uv run python scripts/download_routes.py --yes --verbose
-else
-    echo "y" | uv run python scripts/download_routes.py --yes
+if wait_for_confirmation; then
+    if [ "$VERBOSE" = true ]; then
+        echo "y" | uv run python scripts/download_routes.py --yes --verbose
+    else
+        echo "y" | uv run python scripts/download_routes.py --yes
+    fi
+    if [ $? -ne 0 ]; then
+        print_error "Routes import failed"
+        exit 1
+    fi
+    print_success "Routes data imported successfully"
 fi
-if [ $? -ne 0 ]; then
-    print_error "Routes import failed"
-    exit 1
-fi
-print_success "Routes data imported successfully"
-wait_for_confirmation
 
 # Step 9: Populate Aircraft Fleets
 print_header "Step 9: Populating Aircraft Fleets"
@@ -272,44 +306,50 @@ echo "This step creates aircraft instances for each airline based on their chara
 echo "Fleet sizes are optimized for realistic airline operations with proper capacity distribution."
 echo
 
-uv run python scripts/populate_aircraft.py --reset-db --fleet-multiplier 0.3
-if [ $? -ne 0 ]; then
-    print_error "Aircraft fleet population failed"
-    exit 1
+if wait_for_confirmation; then
+    uv run python scripts/populate_aircraft.py --reset-db --fleet-multiplier 0.3
+    if [ $? -ne 0 ]; then
+        print_error "Aircraft fleet population failed"
+        exit 1
+    fi
+    print_success "Aircraft fleets populated successfully"
 fi
-print_success "Aircraft fleets populated successfully"
-wait_for_confirmation
 
 # Step 10: Populate Flight Schedules
 print_header "Step 10: Populating Flight Schedules"
 print_status "Generating flight schedules based on routes and flight rules..."
-echo "This step creates realistic flight schedules using comprehensive flight rules."
+echo "This step creates realistic flight schedules prioritizing major hub airports."
 echo "Aircraft selection is optimized for route distance and passenger demand."
 echo "This may take several minutes depending on the number of routes."
 echo
 
-# Ask user which flight population method to use
-echo "Choose flight population method:"
-echo "  1) Comprehensive - Advanced flight generation with detailed rules (recommended)"
-echo "  2) Simple - Basic flight generation (faster, less realistic)"
-echo
-read -p "Enter your choice (1 or 2, default: 1): " -n 1 -r
-echo
+if wait_for_confirmation; then
+    # Ask user which flight population method to use
+    echo "Choose flight population method:"
+    echo "  1) Realistic - Hub-prioritized flight generation (recommended)"
+    echo "  2) Comprehensive - Advanced flight generation with detailed rules"
+    echo "  3) Simple - Basic flight generation (faster, less realistic)"
+    echo
+    read -p "Enter your choice (1-3, default: 1): " -n 1 -r
+    echo
 
-if [[ $REPLY =~ ^[2]$ ]]; then
-    print_status "Using simple flight population..."
-    uv run python scripts/populate_flights_simple.py --yes
-else
-    print_status "Using comprehensive flight population (recommended)..."
-    uv run python scripts/populate_flights_comprehensive.py --no-reset
-fi
+    if [[ $REPLY =~ ^[3]$ ]]; then
+        print_status "Using simple flight population..."
+        uv run python scripts/populate_flights_simple.py --yes
+    elif [[ $REPLY =~ ^[2]$ ]]; then
+        print_status "Using comprehensive flight population..."
+        uv run python scripts/populate_flights_comprehensive.py --no-reset
+    else
+        print_status "Using realistic hub-prioritized flight population (recommended)..."
+        uv run python scripts/populate_flights_realistic.py --no-reset
+    fi
 
-if [ $? -ne 0 ]; then
-    print_error "Flight schedule population failed"
-    exit 1
+    if [ $? -ne 0 ]; then
+        print_error "Flight schedule population failed"
+        exit 1
+    fi
+    print_success "Flight schedules populated successfully"
 fi
-print_success "Flight schedules populated successfully"
-wait_for_confirmation
 
 # Step 11: Populate Passenger Data
 print_header "Step 11: Populating Passenger Data"
@@ -319,97 +359,70 @@ echo "Default: 1 million passengers (can be customized with --total-records)"
 echo "This may take several minutes depending on the number of records."
 echo
 
-# Ask user for passenger count
-echo "Choose passenger population size:"
-echo "  1) Small - 100,000 passengers (fast, good for testing)"
-echo "  2) Medium - 1,000,000 passengers (recommended for workshops)"
-echo "  3) Large - 10,000,000 passengers (full dataset, takes longer)"
-echo "  4) Custom - Enter your own number"
-echo
-read -p "Enter your choice (1-4, default: 2): " -n 1 -r
-echo
+if wait_for_confirmation; then
+    # Ask user for passenger count
+    echo "Choose passenger population size:"
+    echo "  1) Small - 100,000 passengers (fast, good for testing)"
+    echo "  2) Medium - 1,000,000 passengers (recommended for workshops)"
+    echo "  3) Large - 10,000,000 passengers (full dataset, takes longer)"
+    echo "  4) Custom - Enter your own number"
+    echo
+    read -p "Enter your choice (1-4, default: 2): " -n 1 -r
+    echo
 
-case $REPLY in
-    1)
-        passenger_count=100000
-        print_status "Using small dataset (100K passengers)..."
-        ;;
-    3)
-        passenger_count=10000000
-        print_status "Using large dataset (10M passengers)..."
-        ;;
-    4)
-        echo
-        read -p "Enter number of passengers: " passenger_count
-        if ! [[ "$passenger_count" =~ ^[0-9]+$ ]] || [ "$passenger_count" -le 0 ]; then
-            print_warning "Invalid number, using default (1M passengers)"
+    case $REPLY in
+        1)
+            passenger_count=100000
+            print_status "Using small dataset (100K passengers)..."
+            ;;
+        3)
+            passenger_count=10000000
+            print_status "Using large dataset (10M passengers)..."
+            ;;
+        4)
+            echo
+            read -p "Enter number of passengers: " passenger_count
+            if ! [[ "$passenger_count" =~ ^[0-9]+$ ]] || [ "$passenger_count" -le 0 ]; then
+                print_warning "Invalid number, using default (1M passengers)"
+                passenger_count=1000000
+            fi
+            print_status "Using custom dataset ($passenger_count passengers)..."
+            ;;
+        *)
             passenger_count=1000000
-        fi
-        print_status "Using custom dataset ($passenger_count passengers)..."
-        ;;
-    *)
-        passenger_count=1000000
-        print_status "Using medium dataset (1M passengers)..."
-        ;;
-esac
+            print_status "Using medium dataset (1M passengers)..."
+            ;;
+    esac
 
-uv run python scripts/populate_passengers.py --total-records $passenger_count --batch-size 50000 --clear
-if [ $? -ne 0 ]; then
-    print_error "Passenger population failed"
-    exit 1
+    uv run python scripts/populate_passengers.py --total-records $passenger_count --batch-size 50000 --clear
+    if [ $? -ne 0 ]; then
+        print_error "Passenger population failed"
+        exit 1
+    fi
+    print_success "Passenger data populated successfully"
 fi
-print_success "Passenger data populated successfully"
-wait_for_confirmation
 
 # Step 12: Populate Flight Bookings
 print_header "Step 12: Populating Flight Bookings"
-print_status "Generating realistic flight bookings with optimized occupancy rates..."
-echo "This step creates passenger bookings for flights with realistic occupancy patterns."
-echo "Peak flights: 90-98% occupancy, Off-peak flights: 75-88% occupancy"
+print_status "Generating realistic flight bookings with high occupancy rates..."
+echo "This step creates passenger bookings for flights with aggressive occupancy patterns."
+echo "Target: 90-100% occupancy on all flights for maximum passengers per flight"
+echo "Allows passenger duplicates across flights (frequent flyers)"
 echo "This may take several minutes depending on the number of flights."
 echo
 
-# Ask user for booking population size
-echo "Choose booking population size:"
-echo "  1) Sample - 5,000 flights (fast, good for testing)"
-echo "  2) Medium - 50,000 flights (recommended for workshops)"
-echo "  3) Large - 200,000 flights (comprehensive dataset)"
-echo "  4) All flights - Process all available flights (may take a long time)"
-echo
-read -p "Enter your choice (1-4, default: 2): " -n 1 -r
-echo
+if wait_for_confirmation; then
+    print_status "Using aggressive booking population for high passenger counts..."
+    
+    # Use the aggressive booking script for high occupancy rates
+    uv run python scripts/populate_bookings_aggressive.py --clear --batch-size 15000
 
-case $REPLY in
-    1)
-        max_flights=5000
-        print_status "Using sample dataset (5K flights)..."
-        ;;
-    3)
-        max_flights=200000
-        print_status "Using large dataset (200K flights)..."
-        ;;
-    4)
-        max_flights=""
-        print_status "Processing all available flights..."
-        ;;
-    *)
-        max_flights=50000
-        print_status "Using medium dataset (50K flights)..."
-        ;;
-esac
-
-if [ -n "$max_flights" ]; then
-    uv run python scripts/populate_bookings_optimized.py --max-flights $max_flights --clear
-else
-    uv run python scripts/populate_bookings_optimized.py --clear
+    if [ $? -ne 0 ]; then
+        print_error "Flight booking population failed"
+        exit 1
+    fi
+    print_success "Flight bookings populated successfully"
 fi
-
-if [ $? -ne 0 ]; then
-    print_error "Flight booking population failed"
-    exit 1
-fi
-print_success "Flight bookings populated successfully"
-wait_for_confirmation
 
 # Final Summary
 print_header "Setup Complete!"
@@ -422,9 +435,9 @@ echo "  ✓ Airlines data (~6,100+ airlines)"
 echo "  ✓ Airports data (~7,700 airports worldwide)"
 echo "  ✓ Routes data (~67,600+ routes between airports)"
 echo "  ✓ Aircraft fleets (realistic fleets optimized for airline operations)"
-echo "  ✓ Flight schedules (comprehensive flight schedules with smart aircraft selection)"
-echo "  ✓ Passenger data (realistic passenger records with global distribution)"
-echo "  ✓ Flight bookings (realistic bookings with optimized occupancy rates)"
+echo "  ✓ Flight schedules (2025 & first half 2026, max 1000 flights/day)"
+echo "  ✓ Passenger data (up to 1 million passengers with global distribution)"
+echo "  ✓ Flight bookings (max 100 bookings per passenger, optimized occupancy rates)"
 
 # Check if cities and city-airport relations were imported
 uv run python -c "
@@ -455,6 +468,7 @@ except Exception as e:
 
 echo
 echo "Next steps:"
+echo "  • Validate constraints: uv run python scripts/validate_workshop_constraints.py"
 echo "  • Run validation: uv run python scripts/validate_models.py"
 echo "  • View statistics: uv run python scripts/airlines_stats.py"
 echo "  • View aircraft stats: uv run python scripts/planes_stats.py"

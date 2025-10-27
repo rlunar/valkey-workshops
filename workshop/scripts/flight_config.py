@@ -16,9 +16,9 @@ class FlightConfig:
         'tier_1_major_hub': {
             'min_routes': 500,
             'name': 'Major Hub Airport',
-            'short_haul_daily': (2, 4),     # REDUCED: 0-1,500km
-            'medium_haul_daily': (1, 2),    # REDUCED: 1,500-4,000km  
-            'long_haul_daily': (0.3, 0.8),  # REDUCED: 4,000+km (2-6 weekly)
+            'short_haul_daily': (2, 4),     # REDUCED: 0-1,500km (was 8-15)
+            'medium_haul_daily': (1, 2),    # REDUCED: 1,500-4,000km (was 4-8)
+            'long_haul_daily': (0.3, 0.8),  # REDUCED: 4,000+km (was 1-3)
             'peak_hours_weight': 0.7,
             'weekend_multiplier': 0.9,
             'seasonal_boost': 1.3,
@@ -27,9 +27,9 @@ class FlightConfig:
         'tier_2_regional_hub': {
             'min_routes': 200,
             'name': 'Regional Hub Airport', 
-            'short_haul_daily': (1, 2),     # REDUCED: 0-1,500km
-            'medium_haul_daily': (0.5, 1),  # REDUCED: 1,500-4,000km (3-7 weekly)
-            'long_haul_weekly': (1, 3),     # REDUCED: 4,000+km (weekly)
+            'short_haul_daily': (1, 2),     # REDUCED: 0-1,500km (was 4-8)
+            'medium_haul_daily': (0.5, 1),  # REDUCED: 1,500-4,000km (was 2-4)
+            'long_haul_weekly': (0.2, 0.5), # REDUCED: 4,000+km (was 0.4-1.0)
             'peak_hours_weight': 0.6,
             'weekend_multiplier': 0.85,
             'seasonal_boost': 1.2,
@@ -38,9 +38,9 @@ class FlightConfig:
         'tier_3_secondary': {
             'min_routes': 50,
             'name': 'Secondary Airport',
-            'short_haul_daily': (0.5, 1),   # REDUCED: 0-1,500km (3-7 weekly)
-            'medium_haul_daily': (0.2, 0.5), # REDUCED: 1,500-4,000km (1-3 weekly)
-            'long_haul_weekly': (0.5, 2),   # REDUCED: 4,000+km (seasonal)
+            'short_haul_daily': (0.5, 1),   # REDUCED: 0-1,500km (was 2-4)
+            'medium_haul_daily': (0.2, 0.5), # REDUCED: 1,500-4,000km (was 1-2)
+            'long_haul_weekly': (0.1, 0.3), # REDUCED: 4,000+km (was 0.4-0.7)
             'peak_hours_weight': 0.5,
             'weekend_multiplier': 0.8,
             'seasonal_boost': 1.15,

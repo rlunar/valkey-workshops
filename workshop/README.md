@@ -151,4 +151,4 @@ For questions during the workshop, reach out to any of the speakers or check the
 
 ---
 
-*This workshop is part of the AWS re:Invent 2024 conference.*
+*This workshop is part of the AWS re:Invent 2025 conference.*

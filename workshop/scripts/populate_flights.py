@@ -475,10 +475,9 @@ def main():
             print("\n❌ No aircraft found in database. Please import aircraft data first.")
             return 1
     
-    # Define date range: last year + upcoming year
-    today = datetime.now()
-    start_date = datetime(today.year - 1, 1, 1)
-    end_date = datetime(today.year + 1, 12, 31)
+    # Define date range - optimized for 2025 and first half of 2026
+    start_date = datetime(2025, 1, 1)  # Start of 2025
+    end_date = datetime(2026, 6, 30)   # End of first half of 2026
     
     if args.verbose:
         print(f"\nGenerating flights for: {start_date.date()} to {end_date.date()}")
