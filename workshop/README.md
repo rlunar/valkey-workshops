@@ -104,11 +104,30 @@ Beyond implementation, the workshop emphasizes critical caching challenges inclu
 ### Module 1: Database Query Caching
 Learn to cache expensive database operations using the FlughafenDB dataset with airlines, airports, and flight routes.
 
-### Module 2: Session Management
-Implement scalable session storage patterns for web applications.
+**Caching Patterns Covered:**
+1. **Cache Aside (Lazy Loading)** - Load data into cache only when requested
+2. **Write-through Cache** - Write to cache and database simultaneously
+3. **Write Behind** - Write to cache immediately, database asynchronously
+
+**Advanced Caching Patterns:**
+- **Nested Doll Caching** - Hierarchical caching strategies for complex data structures
+- **Proper TTL Management** - Dynamic TTL strategies based on data access patterns
+- **Memory Saturation** - Handling cache memory limits and optimization techniques
+- **Eviction Policies** - LRU, LFU, and custom eviction strategies for optimal performance
+- **Cache Hit Ratio** - Monitoring and optimizing cache effectiveness metrics
+
+### Module 2: Anything that can be queried can be cached
+Explore caching strategies for various data sources beyond databases.
+
+**Topics Covered:**
+- **API Caching** - Cache external API responses and reduce latency
+- **Object Store Caching** - Cache images and static assets for faster delivery
 
 ### Module 3: Real-time Leaderboards
 Build dynamic leaderboards with efficient data structures and update patterns.
+
+### Module 4: Session Management
+Implement scalable session storage patterns for web applications.
 
 ## Key Learning Outcomes
 
