@@ -15,6 +15,41 @@ This guide demonstrates key concepts from simple database queries to complex cac
 
 ![FlughafenDB-schema](../static/FlughafenDB-schema.png)
 
+```mermaid
+graph TB
+    subgraph "Core Aviation Entities"
+        A[Airport] --> AG[Airport_Geo]
+        AL[Airline] --> F[Flight]
+        AT[Airplane_Type] --> AP[Airplane]
+        C[Country] --> CT[City]
+        CT --> AG
+    end
+    
+    subgraph "Flight Operations"
+        F --> R[Route]
+        F --> FL[Flight_Log]
+        F --> FS[Flight_Schedule]
+        AP --> F
+        A --> F
+    end
+    
+    subgraph "Passenger Management"
+        P[Passenger] --> B[Booking]
+        B --> F
+        E[Employee] --> AL
+    end
+    
+    subgraph "Weather & Geography"
+        W[Weather] --> A
+        AG --> A
+    end
+    
+    style A fill:#e1f5fe
+    style F fill:#f3e5f5
+    style P fill:#e8f5e8
+    style B fill:#fff3e0
+```
+
 ## Prerequisites
 
 Before starting, ensure you have:
@@ -24,6 +59,33 @@ Before starting, ensure you have:
 - [FlughafenDB](https://github.com/stefanproell/flughafendb/) data populated (see main README.md)
 
 ## Workshop Structure
+
+```mermaid
+flowchart LR
+    subgraph "Part 1: Database Fundamentals"
+        A1[Basic Queries] --> A2[Performance Analysis]
+        A2 --> A3[EXPLAIN Commands]
+        A3 --> A4[Identify Expensive Operations]
+    end
+    
+    subgraph "Part 2: Caching Introduction"
+        B1[Valkey Operations] --> B2[Cache-Aside Pattern]
+        B2 --> B3[Performance Monitoring]
+    end
+    
+    subgraph "Part 3: Advanced Patterns"
+        C1[Write-Through] --> C2[Write-Behind]
+        C2 --> C3[Cache Invalidation]
+        C3 --> C4[Real-World Scenarios]
+    end
+    
+    A4 --> B1
+    B3 --> C1
+    
+    style A1 fill:#e3f2fd
+    style B1 fill:#f1f8e9
+    style C1 fill:#fce4ec
+```
 
 ### Part 1: Database Fundamentals
 - Basic queries and performance analysis
@@ -108,9 +170,9 @@ DESCRIBE airport;     -- MySQL/MariaDB
 +-----------------------+
 ```
 
-### Step 3: Simple Query - Find Airports by Country
+### Step 3: Simple Query - Find Airports by Country and City
 
-Let's start with a basic query to find airports in a specific country:
+Let's start with a basic query to find airports in a specific country 🇩🇪:
 
 ```sql
 -- Find first 10 airports by name (alphabetically) in Germany (Deutschland)
@@ -131,9 +193,24 @@ LIMIT 10 OFFSET 0;
 
 **Expected Output:**
 
+```bash
++----------------------------------------+------+------+-------------+---------+--------+
+| name                                   | iata | icao | city        | country | iso_a3 |
++----------------------------------------+------+------+-------------+---------+--------+
+| [Duplicate] Giebelstadt Army Air Field | GHF  | ETEU | Giebelstadt | Germany | DEU    |
+| Aachen-Merzbrück Airport               | AAH  | EDKA | Aachen      | Germany | DEU    |
+| Altenburg-Nobitz Airport               | AOC  | EDAC | Altenburg   | Germany | DEU    |
+| Augsburg Airport                       | AGB  | EDMA | Augsburg    | Germany | DEU    |
+| Baltrum Airport                        | BMR  | EDWZ | Baltrum     | Germany | DEU    |
+| Barth Airport                          | BBH  | EDBH | Barth       | Germany | DEU    |
+| Bayreuth Airport                       | BYU  | EDQD | Bayreuth    | Germany | DEU    |
+| Berlin-Schönefeld Airport              | SXF  | EDDB | Berlin      | Germany | DEU    |
+| Berlin-Tegel Airport                   | TXL  | EDDT | Berlin      | Germany | DEU    |
+| Berlin-Tempelhof International Airport | THF  | EDDI | Berlin      | Germany | DEU    |
++----------------------------------------+------+------+-------------+---------+--------+
+```
 
-
-If we want to be more specific to find airports in New York City.
+If we want to be more specific to find airports in New York City 🗽.
 
 ```sql
 -- Find all airports in New York City
@@ -196,6 +273,35 @@ JOIN airport_geo ag ON a.airport_id = ag.airport_id
 WHERE ag.country = 'Germany'
 ORDER BY a.name
 LIMIT 10;
+```
+
+```mermaid
+graph TD
+    subgraph "Query Execution Plan"
+        A[Start Query] --> B{Check Index}
+        B -->|No Index| C[Full Table Scan<br/>7,698 rows]
+        B -->|Index Available| D[Index Lookup<br/>~10 rows]
+        C --> E[Filter by Country<br/>~770 rows]
+        D --> E
+        E --> F[Join with Airport Table<br/>1:1 relationship]
+        F --> G[Sort by Name<br/>Using filesort]
+        G --> H[Limit 10 results]
+        H --> I[Return Results]
+    end
+    
+    subgraph "Performance Impact"
+        J[Without Index:<br/>Expensive O(n)]
+        K[With Index:<br/>Efficient O(log n)]
+        L[With Cache:<br/>O(1)]
+    end
+    
+    C -.-> J
+    D -.-> K
+    I -.-> L
+    
+    style C fill:#ffcdd2
+    style D fill:#c8e6c9
+    style L fill:#e1f5fe
 ```
 
 **Expected Output (MySQL):**
@@ -337,6 +443,35 @@ Keep this terminal open - you'll see all Valkey operations in real-time as we pr
 
 Now let's implement a simple cache-aside pattern. In your database terminal, let's simulate checking cache first:
 
+```mermaid
+sequenceDiagram
+    participant App as Application
+    participant Cache as Valkey Cache
+    participant DB as Database
+    
+    Note over App,DB: Cache-Aside Pattern Flow
+    
+    App->>Cache: 1. GET airport:country:Germany
+    Cache-->>App: (nil) - Cache Miss
+    
+    App->>DB: 2. SELECT airports WHERE country='Germany'
+    DB-->>App: Airport data (500ms)
+    
+    App->>Cache: 3. SETEX airport:country:Germany 300 [data]
+    Cache-->>App: OK
+    
+    App-->>App: Return data to user
+    
+    Note over App,DB: Subsequent Request
+    
+    App->>Cache: 4. GET airport:country:Germany
+    Cache-->>App: [cached data] (1ms) - Cache Hit!
+    
+    App-->>App: Return cached data
+    
+    Note over Cache: TTL: 300 seconds
+```
+
 **Step 9a: Check Cache First**
 ```bash
 # In Valkey CLI - check if data exists in cache
@@ -405,6 +540,39 @@ Value at:0x7f8b8c0a5a40 refcount:1 encoding:embstr serializedlength:445 lru:1572
 
 This is the most common and expensive query in any flight booking system. Let's implement flight search with caching:
 
+```mermaid
+graph TB
+    subgraph "Flight Search Architecture"
+        U[User Request<br/>JFK → LAX<br/>2025-12-15] --> C{Check Cache}
+        C -->|Hit| CR[Return Cached Results<br/>~1ms]
+        C -->|Miss| DB[(Database Query)]
+        
+        DB --> Q1[Join Flight Table]
+        Q1 --> Q2[Join Airport Tables]
+        Q2 --> Q3[Join Airline Table]
+        Q3 --> Q4[Join Booking Table]
+        Q4 --> Q5[Filter by Route & Date]
+        Q5 --> Q6[Group & Aggregate]
+        Q6 --> Q7[Sort by Departure]
+        Q7 --> R[Results ~200-500ms]
+        
+        R --> SC[Store in Cache<br/>TTL: 5-15 min]
+        SC --> CR
+    end
+    
+    subgraph "Query Complexity"
+        QC1[4 Table Joins]
+        QC2[Date Functions]
+        QC3[Aggregations]
+        QC4[Subqueries]
+    end
+    
+    style U fill:#e3f2fd
+    style CR fill:#e8f5e8
+    style DB fill:#ffecb3
+    style R fill:#ffcdd2
+```
+
 **Use Case:** User searches for flights from JFK to LAX on a specific date
 
 ```sql
@@ -430,7 +598,7 @@ JOIN airline al ON f.airline_id = al.airline_id
 LEFT JOIN booking b ON f.flight_id = b.flight_id
 WHERE dep_a.iata = 'JFK' 
     AND arr_a.iata = 'LAX'
-    AND DATE(f.departure) = '2024-12-15'
+    AND DATE(f.departure) = '2025-12-15'
 GROUP BY f.flight_id, f.flightno, al.name, al.iata, dep_a.name, dep_a.iata, 
          arr_a.name, arr_a.iata, f.departure, f.arrival
 ORDER BY f.departure;
@@ -454,7 +622,7 @@ JOIN airline al ON f.airline_id = al.airline_id
 LEFT JOIN booking b ON f.flight_id = b.flight_id
 WHERE dep_a.iata = 'JFK' 
     AND arr_a.iata = 'LAX'
-    AND DATE(f.departure) = '2024-12-15'
+    AND DATE(f.departure) = '2025-12-15'
 GROUP BY f.flight_id
 ORDER BY f.departure;
 ```
@@ -470,17 +638,43 @@ ORDER BY f.departure;
 
 Let's implement intelligent caching for flight searches:
 
+```mermaid
+graph LR
+    subgraph "Cache Key Strategy"
+        A[flight:search] --> B[JFK]
+        B --> C[LAX]
+        C --> D[2025-12-15]
+        D --> E[flight:search:JFK:LAX:2025-12-15]
+    end
+    
+    subgraph "Popular Routes Cache"
+        F[ZADD popular:routes] --> G[Score: Frequency]
+        G --> H[JFK:LAX: 1500]
+        G --> I[LAX:JFK: 1200]
+        G --> J[JFK:LHR: 1100]
+    end
+    
+    subgraph "Cache Hierarchy"
+        K[Route Level<br/>TTL: 5-15 min] --> L[Flight Details<br/>TTL: 2-5 min]
+        L --> M[Seat Availability<br/>TTL: 30s-2min]
+    end
+    
+    style E fill:#e1f5fe
+    style H fill:#f3e5f5
+    style K fill:#e8f5e8
+```
+
 ```bash
 # Cache flight search results with structured key
-127.0.0.1:6379> SET flight:search:JFK:LAX:2024-12-15 '[
+127.0.0.1:6379> SET flight:search:JFK:LAX:2025-12-15 '[
   {
     "flight_id": 1001,
     "flightno": "AA123",
     "airline": "American Airlines",
     "departure_airport": "John F Kennedy International",
     "arrival_airport": "Los Angeles International",
-    "departure": "2024-12-15T08:00:00",
-    "arrival": "2024-12-15T11:30:00",
+    "departure": "2025-12-15T08:00:00",
+    "arrival": "2025-12-15T11:30:00",
     "duration_minutes": 330,
     "available_seats": 45
   },
@@ -490,8 +684,8 @@ Let's implement intelligent caching for flight searches:
     "airline": "Delta Air Lines",
     "departure_airport": "John F Kennedy International",
     "arrival_airport": "Los Angeles International",
-    "departure": "2024-12-15T14:15:00",
-    "arrival": "2024-12-15T17:45:00",
+    "departure": "2025-12-15T14:15:00",
+    "arrival": "2025-12-15T17:45:00",
     "duration_minutes": 330,
     "available_seats": 23
   }
@@ -525,7 +719,7 @@ JOIN airport arr_a ON f.to_airport = arr_a.airport_id
 JOIN airline al ON f.airline_id = al.airline_id
 WHERE dep_a.iata = 'JFK' 
     AND arr_a.iata = 'LAX'
-    AND DATE(f.departure) = '2024-12-15'
+    AND DATE(f.departure) = '2025-12-15'
 
 UNION ALL
 
@@ -544,26 +738,26 @@ JOIN airport arr_a ON f.to_airport = arr_a.airport_id
 JOIN airline al ON f.airline_id = al.airline_id
 WHERE dep_a.iata = 'LAX' 
     AND arr_a.iata = 'JFK'
-    AND DATE(f.departure) = '2024-12-22'
+    AND DATE(f.departure) = '2025-12-22'
 ORDER BY direction, departure;
 ```
 
 **Cache round-trip results:**
 ```bash
 # Cache round-trip search with compound key
-127.0.0.1:6379> SET flight:roundtrip:JFK:LAX:2024-12-15:2024-12-22 '{
+127.0.0.1:6379> SET flight:roundtrip:JFK:LAX:2025-12-15:2025-12-22 '{
   "outbound": [
-    {"flight_id": 1001, "flightno": "AA123", "departure": "2024-12-15T08:00:00", "arrival": "2024-12-15T11:30:00"},
-    {"flight_id": 1002, "flightno": "DL456", "departure": "2024-12-15T14:15:00", "arrival": "2024-12-15T17:45:00"}
+    {"flight_id": 1001, "flightno": "AA123", "departure": "2025-12-15T08:00:00", "arrival": "2025-12-15T11:30:00"},
+    {"flight_id": 1002, "flightno": "DL456", "departure": "2025-12-15T14:15:00", "arrival": "2025-12-15T17:45:00"}
   ],
   "return": [
-    {"flight_id": 2001, "flightno": "AA124", "departure": "2024-12-22T09:00:00", "arrival": "2024-12-22T17:30:00"},
-    {"flight_id": 2002, "flightno": "DL457", "departure": "2024-12-22T15:30:00", "arrival": "2024-12-22T23:45:00"}
+    {"flight_id": 2001, "flightno": "AA124", "departure": "2025-12-22T09:00:00", "arrival": "2025-12-22T17:30:00"},
+    {"flight_id": 2002, "flightno": "DL457", "departure": "2025-12-22T15:30:00", "arrival": "2025-12-22T23:45:00"}
   ]
 }' EX 600
 
 # Monitor cache usage
-127.0.0.1:6379> GET flight:roundtrip:JFK:LAX:2024-12-15:2024-12-22
+127.0.0.1:6379> GET flight:roundtrip:JFK:LAX:2025-12-15:2025-12-22
 ```
 
 ### Step 14: User Profile - Last 10 Flights
@@ -653,8 +847,8 @@ Implement user-specific caching:
     "arrival_airport": "Los Angeles International", 
     "arrival_city": "Los Angeles",
     "arrival_country": "USA",
-    "departure": "2024-11-15T08:00:00",
-    "arrival": "2024-11-15T11:30:00",
+    "departure": "2025-11-15T08:00:00",
+    "arrival": "2025-11-15T11:30:00",
     "seat": "12A",
     "price": 450.00,
     "status": "completed"
@@ -670,8 +864,8 @@ Implement user-specific caching:
     "arrival_airport": "John F Kennedy International",
     "arrival_city": "New York",
     "arrival_country": "USA",
-    "departure": "2024-12-20T14:15:00",
-    "arrival": "2024-12-20T22:45:00",
+    "departure": "2025-12-20T14:15:00",
+    "arrival": "2025-12-20T22:45:00",
     "seat": "8C",
     "price": 520.00,
     "status": "upcoming"
@@ -688,6 +882,37 @@ Implement user-specific caching:
 ### Step 16: Real-Time Seat Availability Caching
 
 One of the most critical aspects of flight booking is real-time seat availability:
+
+```mermaid
+graph TB
+    subgraph "Seat Availability System"
+        A[Flight 1001<br/>150 Total Seats] --> B{Cache Check}
+        B -->|Hit| C[Return Availability<br/>~0.1ms]
+        B -->|Miss| D[Database Query<br/>~50-150ms]
+        
+        D --> E[Count Bookings]
+        E --> F[Calculate Available]
+        F --> G[Update Cache]
+        G --> C
+    end
+    
+    subgraph "Real-Time Updates"
+        H[New Booking] --> I[Atomic Update]
+        I --> J[Update Seat Bitmap]
+        I --> K[Update Counters]
+        I --> L[Invalidate Search Cache]
+    end
+    
+    subgraph "Data Structures"
+        M[Hash: flight:1001:seats<br/>total_seats: 150<br/>booked_seats: 45<br/>available_seats: 105]
+        N[Bitmap: flight:1001:seatmap<br/>Bit 0: Seat 1A<br/>Bit 1: Seat 1B<br/>...]
+    end
+    
+    style A fill:#e3f2fd
+    style C fill:#e8f5e8
+    style H fill:#fff3e0
+    style I fill:#ffecb3
+```
 
 ```sql
 -- Check seat availability for a specific flight (frequent query)
@@ -729,6 +954,42 @@ GROUP BY f.flight_id, f.flightno;
 
 When a user books a new flight, we need to invalidate their cached data:
 
+```mermaid
+graph TB
+    subgraph "Cache Invalidation Flow"
+        A[User Books Flight] --> B[Booking Event]
+        B --> C{Identify Affected Caches}
+        
+        C --> D[User Profile Cache]
+        C --> E[Flight Search Cache]
+        C --> F[Seat Availability Cache]
+        C --> G[Route Statistics Cache]
+        
+        D --> H[DEL user:12345:flights]
+        E --> I[DEL flight:search:JFK:LAX:*]
+        F --> J[Update flight:1001:seats]
+        G --> K[ZINCRBY user:12345:routes]
+    end
+    
+    subgraph "Cache Tags System"
+        L[Cache Tags] --> M[user:12345 → user caches]
+        L --> N[flight:1001 → flight caches]
+        L --> O[route:JFK:LAX → search caches]
+    end
+    
+    subgraph "Invalidation Strategies"
+        P[Immediate<br/>Critical Data] --> Q[User Profile<br/>Seat Availability]
+        R[Lazy<br/>Non-Critical] --> S[Statistics<br/>Analytics]
+        T[Time-Based<br/>TTL Expiry] --> U[Search Results<br/>Route Data]
+    end
+    
+    style A fill:#e3f2fd
+    style B fill:#fff3e0
+    style P fill:#ffcdd2
+    style R fill:#f3e5f5
+    style T fill:#e8f5e8
+```
+
 ```bash
 # When user books a new flight, invalidate related caches
 127.0.0.1:6379> DEL user:12345:flights
@@ -737,11 +998,11 @@ When a user books a new flight, we need to invalidate their cached data:
 
 # Set up cache tags for complex invalidation
 127.0.0.1:6379> SADD cache:tags:user:12345 "user:12345:flights" "user:12345:profile"
-127.0.0.1:6379> SADD cache:tags:flight:1001 "flight:search:JFK:LAX:2024-12-15"
+127.0.0.1:6379> SADD cache:tags:flight:1001 "flight:search:JFK:LAX:2025-12-15"
 
 # When flight 1001 is cancelled, invalidate all related searches
 127.0.0.1:6379> SMEMBERS cache:tags:flight:1001
-127.0.0.1:6379> DEL flight:search:JFK:LAX:2024-12-15
+127.0.0.1:6379> DEL flight:search:JFK:LAX:2025-12-15
 
 # Invalidate seat availability when booking occurs
 127.0.0.1:6379> DEL flight:1001:seats
@@ -761,10 +1022,10 @@ FROM flight f
 JOIN airport dep_a ON f.from_airport = dep_a.airport_id 
 JOIN airport arr_a ON f.to_airport = arr_a.airport_id 
 WHERE dep_a.iata = 'JFK' AND arr_a.iata = 'LAX' 
-AND DATE(f.departure) = '2024-12-15';"
+AND DATE(f.departure) = '2025-12-15';"
 
 # Simulate cache hit - measure cache retrieval time
-time valkey-cli GET flight:search:JFK:LAX:2024-12-15
+time valkey-cli GET flight:search:JFK:LAX:2025-12-15
 ```
 
 **User Profile Performance:**
@@ -793,11 +1054,11 @@ For user-facing queries, we need proactive cache warming:
 **Popular Route Cache Warming:**
 ```bash
 # Pre-populate cache for popular routes during off-peak hours
-127.0.0.1:6379> SET flight:search:JFK:LAX:2024-12-15 "$(mysql -u flughafen_user -p flughafendb -e 'SELECT JSON_ARRAYAGG(JSON_OBJECT("flight_id", f.flight_id, "flightno", f.flightno, "departure", f.departure, "arrival", f.arrival)) FROM flight f JOIN airport dep_a ON f.from_airport = dep_a.airport_id JOIN airport arr_a ON f.to_airport = arr_a.airport_id WHERE dep_a.iata = "JFK" AND arr_a.iata = "LAX" AND DATE(f.departure) = "2024-12-15";')" EX 3600
+127.0.0.1:6379> SET flight:search:JFK:LAX:2025-12-15 "$(mysql -u flughafen_user -p flughafendb -e 'SELECT JSON_ARRAYAGG(JSON_OBJECT("flight_id", f.flight_id, "flightno", f.flightno, "departure", f.departure, "arrival", f.arrival)) FROM flight f JOIN airport dep_a ON f.from_airport = dep_a.airport_id JOIN airport arr_a ON f.to_airport = arr_a.airport_id WHERE dep_a.iata = "JFK" AND arr_a.iata = "LAX" AND DATE(f.departure) = "2025-12-15";')" EX 3600
 
 # Warm cache for next 7 days of popular routes
 for date in {15..21}; do
-  127.0.0.1:6379> SET flight:search:JFK:LAX:2024-12-$date "flight_data_for_date" EX 3600
+  127.0.0.1:6379> SET flight:search:JFK:LAX:2025-12-$date "flight_data_for_date" EX 3600
 done
 ```
 
@@ -818,6 +1079,40 @@ done
 ### Step 20: Business Intelligence Queries
 
 Let's work with analytical queries that support business decisions:
+
+```mermaid
+graph TB
+    subgraph "Business Intelligence Architecture"
+        A[BI Dashboard Request] --> B{Check Analytics Cache}
+        B -->|Hit| C[Return Cached Report<br/>~1-5ms]
+        B -->|Miss| D[Complex Analytics Query]
+        
+        D --> E[Multi-Table Joins<br/>Routes + Airports + Airlines]
+        E --> F[Aggregations<br/>COUNT, GROUP BY]
+        F --> G[Sorting & Filtering<br/>Hub Analysis]
+        G --> H[Results ~500-2000ms]
+        
+        H --> I[Cache with Long TTL<br/>1-24 hours]
+        I --> C
+    end
+    
+    subgraph "Query Complexity Levels"
+        J[Simple Lookups<br/>~1-10ms<br/>Cache: Optional]
+        K[Complex Joins<br/>~50-200ms<br/>Cache: Recommended]
+        L[Analytics Queries<br/>~500-2000ms<br/>Cache: Essential]
+    end
+    
+    subgraph "Cache Strategy by Query Type"
+        M[Real-time Data<br/>TTL: 1-5 min]
+        N[Business Reports<br/>TTL: 1-4 hours]
+        O[Historical Analysis<br/>TTL: 12-24 hours]
+    end
+    
+    style A fill:#e3f2fd
+    style C fill:#e8f5e8
+    style D fill:#ffecb3
+    style H fill:#ffcdd2
+```
 
 Let's work with a more complex, expensive query:
 
@@ -864,6 +1159,38 @@ LIMIT 20;
 ### Step 12: Implement Hierarchical Caching
 
 Let's implement a more sophisticated caching strategy:
+
+```mermaid
+graph TB
+    subgraph "Hierarchical Cache Structure"
+        A[Individual Airport Data<br/>airport:ATL] --> B[Route Summaries<br/>route:ATL:summary]
+        B --> C[Hub Statistics<br/>hub:routes:outbound]
+        C --> D[Global Analytics<br/>analytics:hub:rankings]
+    end
+    
+    subgraph "Cache Levels & TTL"
+        E[Level 1: Raw Data<br/>TTL: 1-6 hours<br/>High Frequency Access]
+        F[Level 2: Aggregated<br/>TTL: 6-24 hours<br/>Medium Frequency]
+        G[Level 3: Analytics<br/>TTL: 24-72 hours<br/>Low Frequency]
+    end
+    
+    subgraph "Data Flow"
+        H[Database] --> I[Level 1 Cache]
+        I --> J[Compute Level 2]
+        J --> K[Level 2 Cache]
+        K --> L[Compute Level 3]
+        L --> M[Level 3 Cache]
+    end
+    
+    A -.-> E
+    B -.-> F
+    C -.-> G
+    
+    style A fill:#e1f5fe
+    style B fill:#f3e5f5
+    style C fill:#e8f5e8
+    style D fill:#fff3e0
+```
 
 ```bash
 # Cache individual airport data
@@ -932,6 +1259,42 @@ Let's monitor cache hit rates and performance:
 
 ### Step 15: Advanced Cache Patterns
 
+```mermaid
+graph TB
+    subgraph "Write-Through Pattern"
+        A[Application Update] --> B[Update Database]
+        A --> C[Update Cache]
+        B --> D[Data Consistency]
+        C --> D
+    end
+    
+    subgraph "Write-Behind Pattern"
+        E[Application Update] --> F[Update Cache]
+        F --> G[Async Update DB]
+        G --> H[Higher Performance]
+    end
+    
+    subgraph "Cache-Aside Pattern"
+        I[Read Request] --> J{Cache Hit?}
+        J -->|Yes| K[Return Cached Data]
+        J -->|No| L[Read from DB]
+        L --> M[Update Cache]
+        M --> K
+    end
+    
+    subgraph "TTL Strategy"
+        N[Static Data<br/>TTL: 24h] --> O[Airport Names<br/>Country Codes]
+        P[Semi-Static<br/>TTL: 1-6h] --> Q[Flight Schedules<br/>Route Info]
+        R[Dynamic Data<br/>TTL: 1-15min] --> S[Seat Availability<br/>Search Results]
+        T[Real-time<br/>TTL: 30s-2min] --> U[Live Prices<br/>Booking Status]
+    end
+    
+    style A fill:#e3f2fd
+    style E fill:#f3e5f5
+    style I fill:#e8f5e8
+    style N fill:#fff3e0
+```
+
 **Write-Through Pattern:**
 ```bash
 # When updating airport data, update both database and cache
@@ -977,6 +1340,39 @@ Simulate user session caching:
 
 Create a real-time airport traffic leaderboard:
 
+```mermaid
+graph TB
+    subgraph "Leaderboard Architecture"
+        A[Airport Traffic Data] --> B[Sorted Set<br/>ZADD airport:traffic:daily]
+        B --> C[Real-time Updates<br/>ZINCRBY operations]
+        C --> D[Leaderboard Queries<br/>ZREVRANGE with scores]
+    end
+    
+    subgraph "Leaderboard Operations"
+        E[Add/Update Score<br/>ZADD key score member] --> F[Increment Score<br/>ZINCRBY key increment member]
+        F --> G[Get Top N<br/>ZREVRANGE key 0 N WITHSCORES]
+        G --> H[Get Rank<br/>ZREVRANK key member]
+    end
+    
+    subgraph "Use Cases"
+        I[Busiest Airports<br/>Daily/Monthly Traffic]
+        J[Popular Routes<br/>Booking Frequency]
+        K[Top Airlines<br/>Flight Volume]
+        L[User Rankings<br/>Miles Flown]
+    end
+    
+    subgraph "Performance Benefits"
+        M[O(log N) Updates<br/>Very Fast Inserts]
+        N[O(log N + M) Range Queries<br/>Efficient Top-K]
+        O[Real-time Rankings<br/>Live Leaderboards]
+    end
+    
+    style A fill:#e3f2fd
+    style C fill:#e8f5e8
+    style G fill:#f3e5f5
+    style M fill:#fff3e0
+```
+
 ```bash
 # Add airports to leaderboard with passenger counts
 127.0.0.1:6379> ZADD airport:traffic:daily 95000000 "ATL" 87000000 "PEK" 83000000 "DXB" 79000000 "LAX" 78000000 "ORD"
@@ -994,6 +1390,52 @@ Create a real-time airport traffic leaderboard:
 ### Step 18: Cache Stampede Prevention
 
 Simulate and prevent cache stampede:
+
+```mermaid
+sequenceDiagram
+    participant A1 as App Instance 1
+    participant A2 as App Instance 2
+    participant A3 as App Instance 3
+    participant C as Cache
+    participant DB as Database
+    
+    Note over A1,DB: Cache Stampede Scenario
+    
+    A1->>C: GET expensive:query:result
+    A2->>C: GET expensive:query:result  
+    A3->>C: GET expensive:query:result
+    C-->>A1: (nil) - Cache Miss
+    C-->>A2: (nil) - Cache Miss
+    C-->>A3: (nil) - Cache Miss
+    
+    Note over A1,DB: Without Protection - All Query DB
+    
+    A1->>DB: Expensive Query (500ms)
+    A2->>DB: Expensive Query (500ms)
+    A3->>DB: Expensive Query (500ms)
+    
+    Note over A1,DB: With Lock Protection
+    
+    A1->>C: SET cache:lock:expensive_query "locked" EX 60 NX
+    A2->>C: SET cache:lock:expensive_query "locked" EX 60 NX
+    A3->>C: SET cache:lock:expensive_query "locked" EX 60 NX
+    C-->>A1: OK (Lock Acquired)
+    C-->>A2: (nil) - Lock Failed
+    C-->>A3: (nil) - Lock Failed
+    
+    A1->>DB: Expensive Query (500ms)
+    A2->>A2: Wait & Retry
+    A3->>A3: Wait & Retry
+    
+    DB-->>A1: Query Results
+    A1->>C: SET expensive:query:result [data] EX 3600
+    A1->>C: DEL cache:lock:expensive_query
+    
+    A2->>C: GET expensive:query:result
+    A3->>C: GET expensive:query:result
+    C-->>A2: [cached data] - Cache Hit
+    C-->>A3: [cached data] - Cache Hit
+```
 
 ```bash
 # Set a lock to prevent multiple processes from rebuilding cache simultaneously
@@ -1118,6 +1560,40 @@ end
 
 ## Workshop Summary and Key Takeaways
 
+```mermaid
+graph TB
+    subgraph "Performance Improvements"
+        A[Database Only<br/>50-500ms] --> B[With Caching<br/>0.1-2ms]
+        B --> C[75-5000x<br/>Improvement]
+    end
+    
+    subgraph "Query Performance by Type"
+        D[Flight Search<br/>500ms → 2ms<br/>250x faster]
+        E[User History<br/>800ms → 1ms<br/>800x faster]
+        F[Seat Check<br/>150ms → 0.5ms<br/>300x faster]
+        G[BI Queries<br/>2000ms → 5ms<br/>400x faster]
+    end
+    
+    subgraph "Cache Hit Rate Targets"
+        H[Flight Searches<br/>>95% hit rate]
+        I[User Profiles<br/>>90% hit rate]
+        J[Seat Availability<br/>>85% hit rate]
+        K[Analytics<br/>>80% hit rate]
+    end
+    
+    subgraph "Memory Efficiency"
+        L[JSON Strings<br/>Flexible, Higher Memory]
+        M[Hash Structures<br/>Structured, Lower Memory]
+        N[Bitmaps<br/>Seat Maps, Minimal Memory]
+        O[Compressed<br/>Lowest Memory, CPU Cost]
+    end
+    
+    style C fill:#e8f5e8
+    style D fill:#e3f2fd
+    style H fill:#f3e5f5
+    style L fill:#fff3e0
+```
+
 ### Performance Improvements Observed
 
 1. **User-Facing Query Performance:**
@@ -1145,6 +1621,45 @@ end
 
 ### Best Practices Learned
 
+```mermaid
+graph TB
+    subgraph "Cache Key Design Patterns"
+        A[Hierarchical Keys<br/>service:entity:identifier]
+        B[flight:search:JFK:LAX:2025-12-15]
+        C[user:12345:flights]
+        D[flight:1001:seats]
+        A --> B
+        A --> C
+        A --> D
+    end
+    
+    subgraph "TTL Strategy Matrix"
+        E[Data Volatility] --> F[TTL Duration]
+        F --> G[Static Data: 24h<br/>Airport names, countries]
+        F --> H[Semi-Static: 1-6h<br/>Flight schedules, routes]
+        F --> I[Dynamic: 5-15min<br/>Search results, prices]
+        F --> J[Real-time: 30s-2min<br/>Seat availability, bookings]
+    end
+    
+    subgraph "Invalidation Strategies"
+        K[Event-Driven<br/>Immediate] --> L[User bookings<br/>Profile updates]
+        M[Time-Based<br/>TTL Expiry] --> N[Search results<br/>Analytics]
+        O[Manual<br/>Admin Actions] --> P[System maintenance<br/>Data corrections]
+    end
+    
+    subgraph "Monitoring Metrics"
+        Q[Hit Rate %<br/>Target: >90%]
+        R[Response Time<br/>Target: <2ms]
+        S[Memory Usage<br/>Monitor growth]
+        T[Eviction Rate<br/>Optimize TTL]
+    end
+    
+    style A fill:#e3f2fd
+    style E fill:#f3e5f5
+    style K fill:#e8f5e8
+    style Q fill:#fff3e0
+```
+
 1. **Cache Key Design for User-Facing Queries:**
    - **Flight searches**: `flight:search:{origin}:{destination}:{date}`
    - **User profiles**: `user:{user_id}:{data_type}`
@@ -1170,6 +1685,40 @@ end
    - Measure user session performance improvements
 
 ### Business Impact of Caching
+
+```mermaid
+graph TB
+    subgraph "User Experience Impact"
+        A[Slow Responses<br/>500ms+] --> B[User Frustration<br/>High Abandonment]
+        C[Fast Responses<br/><2ms] --> D[Smooth Experience<br/>Higher Conversion]
+        
+        E[Mobile Users<br/>Slow Networks] --> F[Critical Performance<br/>Caching Essential]
+    end
+    
+    subgraph "System Scalability"
+        G[Database Load<br/>100% queries] --> H[With Cache<br/>10-30% queries]
+        H --> I[10-50x More Users<br/>Same Infrastructure]
+        
+        J[Peak Traffic<br/>Holiday Rushes] --> K[Cache Absorbs<br/>Traffic Spikes]
+    end
+    
+    subgraph "Revenue Impact"
+        L[Faster Search<br/>2ms response] --> M[Higher Conversion<br/>+15-30%]
+        N[Better UX] --> O[User Retention<br/>Repeat Customers]
+        P[System Reliability] --> Q[Reduced Support<br/>Lower Costs]
+        R[Performance Edge] --> S[Competitive Advantage<br/>Market Share]
+    end
+    
+    subgraph "Cost Savings"
+        T[Database Servers<br/>Reduced Load] --> U[Infrastructure Savings<br/>30-70% reduction]
+        V[Support Tickets<br/>Fewer Issues] --> W[Operational Savings<br/>Staff efficiency]
+    end
+    
+    style D fill:#e8f5e8
+    style I fill:#e3f2fd
+    style M fill:#f3e5f5
+    style U fill:#fff3e0
+```
 
 1. **User Experience Improvements:**
    - **Flight search response time**: 500ms → 2ms (perceived as instant)
