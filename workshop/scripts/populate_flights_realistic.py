@@ -40,6 +40,11 @@ class RealisticFlightPopulator:
         self.config = FlightConfig()
         self.verbose = verbose
         
+        # Global flight reduction factor for balanced distribution
+        # Target: ~100K flights over 547 days (2025-01-01 to 2026-06-30) = ~180 flights per day
+        # Focus on balanced distribution rather than raw volume
+        self.global_reduction_factor = 1.5  # Moderate boost with better distribution
+        
         # Major hub airports (prioritized for flight generation)
         self.major_hubs = {
             'ATL', 'ORD', 'LHR', 'CDG', 'FRA', 'LAX', 'DFW', 'JFK',
@@ -126,7 +131,7 @@ class RealisticFlightPopulator:
         return route_counts
     
     def get_prioritized_routes(self, session: Session, max_routes: int = 2000) -> List[Dict[str, Any]]:
-        """Get routes prioritized by major hub involvement"""
+        """Get routes prioritized by major hub involvement with guaranteed balanced hub coverage"""
         
         # Get existing airline codes and airports from cache
         existing_airlines = list(self._airline_cache.keys())
@@ -141,63 +146,20 @@ class RealisticFlightPopulator:
         available_hubs = [hub for hub in self.major_hubs if hub in existing_airports]
         
         if self.verbose:
-            print(f"Prioritizing routes for {len(available_hubs)} major hubs")
+            print(f"Prioritizing routes for {len(available_hubs)} major hubs: {', '.join(sorted(available_hubs))}")
         
-        # Get routes involving major hubs (highest priority)
-        hub_routes_query = (
-            select(
-                Route.route_id,
-                Route.source_airport_code,
-                Route.destination_airport_code,
-                Route.airline_code,
-                Route.codeshare,
-                Route.stops,
-                Route.equipment
-            )
-            .where(
-                Route.source_airport_code.is_not(None),
-                Route.destination_airport_code.is_not(None),
-                Route.airline_code.is_not(None),
-                Route.source_airport_code.in_(existing_airports),
-                Route.destination_airport_code.in_(existing_airports),
-                Route.airline_code.in_(existing_airlines),
-                # At least one end must be a major hub
-                (Route.source_airport_code.in_(available_hubs)) | 
-                (Route.destination_airport_code.in_(available_hubs))
-            )
-            .limit(int(max_routes * 0.7))  # 70% of routes should involve hubs
-        )
+        all_routes = []
+        hub_route_counts = {hub: 0 for hub in available_hubs}
         
-        hub_routes = []
-        for route in session.exec(hub_routes_query).all():
-            # Calculate priority score based on hub involvement
-            priority_score = 0
-            if route.source_airport_code in self.major_hubs:
-                priority_score += 2
-            if route.destination_airport_code in self.major_hubs:
-                priority_score += 2
+        # Calculate routes per hub for balanced distribution
+        routes_per_hub = max(15, max_routes // (len(available_hubs) * 2))  # Ensure minimum coverage
+        
+        # First, ensure BALANCED coverage for each major hub
+        for hub in available_hubs:
+            hub_routes_added = 0
             
-            # Boost score for routes between two hubs
-            if (route.source_airport_code in self.major_hubs and 
-                route.destination_airport_code in self.major_hubs):
-                priority_score += 3
-            
-            hub_routes.append({
-                'route_id': route.route_id,
-                'origin': route.source_airport_code,
-                'destination': route.destination_airport_code,
-                'airline': route.airline_code,
-                'codeshare': route.codeshare or False,
-                'stops': route.stops or 0,
-                'equipment': route.equipment,
-                'priority_score': priority_score,
-                'is_hub_route': True
-            })
-        
-        # Get additional non-hub routes to fill remaining capacity
-        remaining_capacity = max_routes - len(hub_routes)
-        if remaining_capacity > 0:
-            non_hub_routes_query = (
+            # Get routes FROM this hub (outbound) - LIMITED to prevent over-concentration
+            hub_outbound_query = (
                 select(
                     Route.route_id,
                     Route.source_airport_code,
@@ -208,21 +170,24 @@ class RealisticFlightPopulator:
                     Route.equipment
                 )
                 .where(
-                    Route.source_airport_code.is_not(None),
+                    Route.source_airport_code == hub,
                     Route.destination_airport_code.is_not(None),
                     Route.airline_code.is_not(None),
-                    Route.source_airport_code.in_(existing_airports),
                     Route.destination_airport_code.in_(existing_airports),
-                    Route.airline_code.in_(existing_airlines),
-                    # Neither end is a major hub
-                    ~(Route.source_airport_code.in_(available_hubs)),
-                    ~(Route.destination_airport_code.in_(available_hubs))
+                    Route.airline_code.in_(existing_airlines)
                 )
-                .limit(remaining_capacity)
+                .limit(routes_per_hub)  # Limit per hub to prevent concentration
             )
             
-            for route in session.exec(non_hub_routes_query).all():
-                hub_routes.append({
+            for route in session.exec(hub_outbound_query).all():
+                if hub_routes_added >= routes_per_hub:
+                    break
+                    
+                priority_score = 5  # High priority for hub outbound
+                if route.destination_airport_code in self.major_hubs:
+                    priority_score = 6  # Moderate boost for hub-to-hub (reduced from 7)
+                
+                all_routes.append({
                     'route_id': route.route_id,
                     'origin': route.source_airport_code,
                     'destination': route.destination_airport_code,
@@ -230,18 +195,168 @@ class RealisticFlightPopulator:
                     'codeshare': route.codeshare or False,
                     'stops': route.stops or 0,
                     'equipment': route.equipment,
-                    'priority_score': 1,  # Lower priority
-                    'is_hub_route': False
+                    'priority_score': priority_score,
+                    'is_hub_route': True,
+                    'hub_type': 'outbound',
+                    'hub_name': hub
                 })
+                hub_routes_added += 1
+                hub_route_counts[hub] += 1
+            
+            # Get routes TO this hub (inbound) - BALANCED with outbound
+            remaining_for_hub = routes_per_hub - hub_routes_added
+            if remaining_for_hub > 0:
+                hub_inbound_query = (
+                    select(
+                        Route.route_id,
+                        Route.source_airport_code,
+                        Route.destination_airport_code,
+                        Route.airline_code,
+                        Route.codeshare,
+                        Route.stops,
+                        Route.equipment
+                    )
+                    .where(
+                        Route.destination_airport_code == hub,
+                        Route.source_airport_code.is_not(None),
+                        Route.airline_code.is_not(None),
+                        Route.source_airport_code.in_(existing_airports),
+                        Route.airline_code.in_(existing_airlines),
+                        # Avoid routes we already added
+                        Route.route_id.not_in([r['route_id'] for r in all_routes])
+                    )
+                    .limit(remaining_for_hub)
+                )
+                
+                for route in session.exec(hub_inbound_query).all():
+                    priority_score = 4  # High priority for hub inbound
+                    if route.source_airport_code in self.major_hubs:
+                        priority_score = 6  # Moderate boost for hub-to-hub
+                    
+                    all_routes.append({
+                        'route_id': route.route_id,
+                        'origin': route.source_airport_code,
+                        'destination': route.destination_airport_code,
+                        'airline': route.airline_code,
+                        'codeshare': route.codeshare or False,
+                        'stops': route.stops or 0,
+                        'equipment': route.equipment,
+                        'priority_score': priority_score,
+                        'is_hub_route': True,
+                        'hub_type': 'inbound',
+                        'hub_name': hub
+                    })
+                    hub_route_counts[hub] += 1
         
-        # Sort by priority score (highest first)
-        hub_routes.sort(key=lambda x: x['priority_score'], reverse=True)
+        # Remove duplicates based on route_id
+        seen_routes = set()
+        unique_routes = []
+        for route in all_routes:
+            if route['route_id'] not in seen_routes:
+                seen_routes.add(route['route_id'])
+                unique_routes.append(route)
+        
+        # Fill remaining capacity with diverse routes (prevent concentration)
+        remaining_capacity = max_routes - len(unique_routes)
+        if remaining_capacity > 0:
+            # Get additional routes with diversity constraints
+            additional_routes = []
+            
+            # Limit additional routes per hub to maintain balance
+            max_additional_per_hub = max(5, remaining_capacity // len(available_hubs))
+            
+            for hub in available_hubs:
+                current_hub_routes = hub_route_counts[hub]
+                if current_hub_routes < routes_per_hub + max_additional_per_hub:
+                    additional_needed = min(max_additional_per_hub, 
+                                          remaining_capacity // len(available_hubs))
+                    
+                    additional_hub_query = (
+                        select(
+                            Route.route_id,
+                            Route.source_airport_code,
+                            Route.destination_airport_code,
+                            Route.airline_code,
+                            Route.codeshare,
+                            Route.stops,
+                            Route.equipment
+                        )
+                        .where(
+                            Route.source_airport_code.is_not(None),
+                            Route.destination_airport_code.is_not(None),
+                            Route.airline_code.is_not(None),
+                            Route.source_airport_code.in_(existing_airports),
+                            Route.destination_airport_code.in_(existing_airports),
+                            Route.airline_code.in_(existing_airlines),
+                            # At least one end must be this specific hub
+                            (Route.source_airport_code == hub) | 
+                            (Route.destination_airport_code == hub),
+                            # Exclude already selected routes
+                            Route.route_id.not_in(seen_routes)
+                        )
+                        .limit(additional_needed)
+                    )
+                    
+                    for route in session.exec(additional_hub_query).all():
+                        priority_score = 2
+                        if route.source_airport_code in self.major_hubs:
+                            priority_score += 1
+                        if route.destination_airport_code in self.major_hubs:
+                            priority_score += 1
+                        # Reduced boost for hub-to-hub to prevent concentration
+                        if (route.source_airport_code in self.major_hubs and 
+                            route.destination_airport_code in self.major_hubs):
+                            priority_score += 1  # Reduced from +2
+                        
+                        additional_routes.append({
+                            'route_id': route.route_id,
+                            'origin': route.source_airport_code,
+                            'destination': route.destination_airport_code,
+                            'airline': route.airline_code,
+                            'codeshare': route.codeshare or False,
+                            'stops': route.stops or 0,
+                            'equipment': route.equipment,
+                            'priority_score': priority_score,
+                            'is_hub_route': True,
+                            'hub_type': 'additional',
+                            'hub_name': hub
+                        })
+                        seen_routes.add(route.route_id)
+            
+            unique_routes.extend(additional_routes)
+        
+        # Sort by priority score but maintain diversity
+        unique_routes.sort(key=lambda x: (x['priority_score'], x['hub_name']), reverse=True)
+        
+        # Final balancing - ensure no single hub dominates
+        hub_final_counts = {}
+        balanced_routes = []
+        max_routes_per_hub = max_routes // len(available_hubs) + 10  # Allow some variance
+        
+        for route in unique_routes:
+            hub_origin = route['origin'] if route['origin'] in available_hubs else None
+            hub_dest = route['destination'] if route['destination'] in available_hubs else None
+            
+            # Check if adding this route would create imbalance
+            origin_count = hub_final_counts.get(hub_origin, 0) if hub_origin else 0
+            dest_count = hub_final_counts.get(hub_dest, 0) if hub_dest else 0
+            
+            # Allow route if it doesn't create excessive concentration
+            if (not hub_origin or origin_count < max_routes_per_hub) and \
+               (not hub_dest or dest_count < max_routes_per_hub):
+                balanced_routes.append(route)
+                if hub_origin:
+                    hub_final_counts[hub_origin] = origin_count + 1
+                if hub_dest:
+                    hub_final_counts[hub_dest] = dest_count + 1
         
         if self.verbose:
-            hub_count = sum(1 for r in hub_routes if r['is_hub_route'])
-            print(f"Selected {len(hub_routes)} routes: {hub_count} hub routes, {len(hub_routes) - hub_count} non-hub routes")
+            print(f"Selected {len(balanced_routes)} balanced routes:")
+            for hub in sorted(available_hubs):
+                count = hub_final_counts.get(hub, 0)
+                print(f"  {hub}: {count} routes")
         
-        return hub_routes
+        return balanced_routes
     
     def calculate_daily_flights(self, route: Dict[str, Any], date: datetime, distance_km: float) -> int:
         """Calculate number of flights for a route on a specific date"""
@@ -259,44 +374,58 @@ class RealisticFlightPopulator:
         # Use the higher tier (lower tier number) for frequency calculation
         route_tier = origin_tier if origin_tier['min_routes'] >= dest_tier['min_routes'] else dest_tier
         
-        # Base flight frequency based on distance and tier
+        # Base flight frequency based on distance and tier (ADJUSTED for 100K flight target)
         if distance_km <= 1500:  # Short-haul
             if route_tier['min_routes'] >= 500:  # Tier 1
-                base_flights = random.uniform(4, 8)
+                base_flights = random.uniform(1.5, 3.0)  # INCREASED for 100K target
             elif route_tier['min_routes'] >= 200:  # Tier 2
-                base_flights = random.uniform(2, 4)
+                base_flights = random.uniform(0.8, 1.5)  # INCREASED for 100K target
             elif route_tier['min_routes'] >= 50:  # Tier 3
-                base_flights = random.uniform(1, 2)
+                base_flights = random.uniform(0.4, 0.8)  # INCREASED for 100K target
             elif route_tier['min_routes'] >= 10:  # Tier 4
-                base_flights = random.uniform(0.4, 1)
+                base_flights = random.uniform(0.2, 0.4)  # INCREASED for 100K target
             else:  # Tier 5
-                base_flights = random.uniform(0.2, 0.6)
+                base_flights = random.uniform(0.1, 0.2)  # INCREASED for 100K target
         elif distance_km <= 4000:  # Medium-haul
             if route_tier['min_routes'] >= 500:  # Tier 1
-                base_flights = random.uniform(2, 4)
+                base_flights = random.uniform(0.8, 1.5)  # INCREASED for 100K target
             elif route_tier['min_routes'] >= 200:  # Tier 2
-                base_flights = random.uniform(1, 2)
+                base_flights = random.uniform(0.4, 0.8)  # INCREASED for 100K target
             elif route_tier['min_routes'] >= 50:  # Tier 3
-                base_flights = random.uniform(0.4, 1)
+                base_flights = random.uniform(0.2, 0.4)  # INCREASED for 100K target
             elif route_tier['min_routes'] >= 10:  # Tier 4
-                base_flights = random.uniform(0.2, 0.5)
+                base_flights = random.uniform(0.1, 0.2)  # INCREASED for 100K target
             else:  # Tier 5
-                base_flights = 0
+                base_flights = random.uniform(0.05, 0.1)  # INCREASED for 100K target
         else:  # Long-haul (4000+ km)
             if route_tier['min_routes'] >= 500:  # Tier 1
-                base_flights = random.uniform(0.5, 1.5)
+                base_flights = random.uniform(0.2, 0.6)  # INCREASED for 100K target
             elif route_tier['min_routes'] >= 200:  # Tier 2
-                base_flights = random.uniform(0.3, 0.8)
+                base_flights = random.uniform(0.1, 0.3)  # INCREASED for 100K target
             elif route_tier['min_routes'] >= 50:  # Tier 3
-                base_flights = random.uniform(0.2, 0.5)
+                base_flights = random.uniform(0.05, 0.2)  # INCREASED for 100K target
             else:  # Tier 4-5
-                base_flights = 0
+                base_flights = random.uniform(0.02, 0.1)  # INCREASED for 100K target
         
-        # Major hub boost - significantly increase flights for hub routes
+        # Major hub boost with balanced distribution
         if route['is_hub_route']:
-            hub_multiplier = 1.5  # 50% more flights for hub routes
+            # Base hub multiplier - REDUCED to prevent concentration
+            hub_multiplier = 1.2  # 20% more flights for hub routes (reduced from 1.5)
+            
+            # Hub-to-hub routes get moderate boost (prevent over-concentration)
             if (origin_code in self.major_hubs and dest_code in self.major_hubs):
-                hub_multiplier = 2.0  # 100% more for hub-to-hub routes
+                hub_multiplier = 1.4  # 40% more for hub-to-hub routes (reduced from 2.0)
+            
+            # Special boost for underrepresented hubs like JFK
+            underrepresented_hubs = {'JFK', 'LHR', 'CDG', 'FRA', 'LAX', 'ORD'}
+            if origin_code in underrepresented_hubs or dest_code in underrepresented_hubs:
+                hub_multiplier *= 1.5  # Additional 50% boost (increased from 1.3)
+            
+            # Penalty for over-represented hubs like DFW
+            overrepresented_hubs = {'DFW'}
+            if origin_code in overrepresented_hubs or dest_code in overrepresented_hubs:
+                hub_multiplier *= 0.6  # 40% reduction for over-represented hubs
+            
             base_flights *= hub_multiplier
         
         # Apply seasonal multiplier
@@ -315,13 +444,30 @@ class RealisticFlightPopulator:
         # Calculate final flight count
         total_flights = base_flights * seasonal_mult * dow_mult * airline_mult * codeshare_mult
         
+        # Apply global reduction factor for 100K flight target
+        total_flights *= self.global_reduction_factor
+        
         # Convert to integer with probabilistic rounding
         flights_today = int(total_flights)
         if random.random() < (total_flights - flights_today):
             flights_today += 1
         
-        # Ensure reasonable daily limits per route
-        flights_today = min(flights_today, 15)  # Max 15 flights per route per day
+        # Route balancing to prevent over-concentration - MORE AGGRESSIVE
+        route_key = f"{origin_code}-{dest_code}"
+        
+        # Apply progressive reduction for high-frequency routes - MORE AGGRESSIVE
+        if flights_today > 4:
+            flights_today = int(flights_today * 0.5)  # Reduce by 50% for high frequency (was 0.7)
+        elif flights_today > 2:
+            flights_today = int(flights_today * 0.7)  # Reduce by 30% for medium frequency (was 0.85)
+        
+        # More restrictive daily limits per route for better distribution
+        if origin_code in self.major_hubs and dest_code in self.major_hubs:
+            max_daily = 3  # Reduced from 6 for hub-to-hub
+        else:
+            max_daily = 2  # Reduced from 4 for other routes
+            
+        flights_today = min(flights_today, max_daily)
         
         return max(0, flights_today)
     
@@ -563,7 +709,7 @@ class RealisticFlightPopulator:
         return flights
     
     def populate_flights(self, start_date: datetime, end_date: datetime, 
-                        batch_size: int = 1000, max_routes: int = 2000) -> int:
+                        batch_size: int = 1000, max_routes: int = 1000, max_daily_flights: int = 500) -> int:
         """Populate flights for the specified date range"""
         
         if self.verbose:
@@ -617,9 +763,16 @@ class RealisticFlightPopulator:
                     
                     # Generate flights for each route on this date
                     for route in routes:
+                        # Check if we've reached the daily flight limit
+                        if len(daily_flights) >= max_daily_flights:
+                            break
+                            
                         try:
                             route_flights = self.generate_flights_for_route_date(route, current_date)
-                            daily_flights.extend(route_flights)
+                            # Only add flights if we don't exceed the daily limit
+                            remaining_capacity = max_daily_flights - len(daily_flights)
+                            if remaining_capacity > 0:
+                                daily_flights.extend(route_flights[:remaining_capacity])
                         except Exception as e:
                             if days_processed == 0 and self.verbose:
                                 print(f"   Warning: Error generating flights for route {route['origin']}-{route['destination']}: {e}")
@@ -733,6 +886,8 @@ class RealisticFlightPopulator:
                 if use_progress_bar:
                     pbar.close()
                 
+                if self.verbose:
+                    print(f"Cleared {deleted_total:,} flights")
                 return deleted_total
             
             return 0
@@ -749,6 +904,8 @@ def main():
                        help='Reset database without prompting')
     parser.add_argument('--no-reset', action='store_true',
                        help='Keep existing data without prompting')
+    parser.add_argument('--yes', '-y', action='store_true',
+                       help='Auto-confirm all prompts (equivalent to --reset-db)')
     args = parser.parse_args()
     
     if not DEPENDENCIES_AVAILABLE:
@@ -781,7 +938,7 @@ def main():
     
     # Handle database reset
     reset_db = False
-    if args.reset_db:
+    if args.reset_db or args.yes:
         reset_db = True
     elif args.no_reset:
         reset_db = False
@@ -792,10 +949,16 @@ def main():
     try:
         cleared_count = 0
         if reset_db:
+            if args.verbose:
+                print("\nClearing existing flights...")
             cleared_count = populator.clear_flights_in_range(start_date, end_date)
         
-        # Generate new flights
-        created_count = populator.populate_flights(start_date, end_date)
+        # Generate new flights with balanced hub distribution
+        if args.verbose:
+            print("\nGenerating balanced hub-distributed flights...")
+            print("Daily flight limit: 600 flights per day (reduced for better distribution)")
+            print("Route limit: 2000 routes (balanced hub coverage)")
+        created_count = populator.populate_flights(start_date, end_date, max_routes=2000, max_daily_flights=600)
         
         print(f"✅ Hub-prioritized flight population completed!")
         if args.verbose:

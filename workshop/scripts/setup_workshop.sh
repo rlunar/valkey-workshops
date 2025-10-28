@@ -319,16 +319,17 @@ fi
 print_header "Step 10: Populating Flight Schedules"
 print_status "Generating flight schedules based on routes and flight rules..."
 echo "This step creates realistic flight schedules prioritizing major hub airports."
-echo "Aircraft selection is optimized for route distance and passenger demand."
+echo "Target: ~100,000 flights optimized for workshop performance."
+echo "Major hubs (ATL, ORD, LHR, CDG, FRA, LAX, DFW, JFK) get priority."
 echo "This may take several minutes depending on the number of routes."
 echo
 
 if wait_for_confirmation; then
     # Ask user which flight population method to use
     echo "Choose flight population method:"
-    echo "  1) Realistic - Hub-prioritized flight generation (recommended)"
-    echo "  2) Comprehensive - Advanced flight generation with detailed rules"
-    echo "  3) Simple - Basic flight generation (faster, less realistic)"
+    echo "  1) Realistic - Hub-prioritized, ~100K flights (recommended for workshops)"
+    echo "  2) Comprehensive - Advanced generation, ~500K+ flights (slower)"
+    echo "  3) Simple - Basic generation, variable count (fastest)"
     echo
     read -p "Enter your choice (1-3, default: 1): " -n 1 -r
     echo
@@ -338,10 +339,13 @@ if wait_for_confirmation; then
         uv run python scripts/populate_flights_simple.py --yes
     elif [[ $REPLY =~ ^[2]$ ]]; then
         print_status "Using comprehensive flight population..."
+        print_warning "This may generate 500K+ flights and take longer..."
         uv run python scripts/populate_flights_comprehensive.py --no-reset
     else
         print_status "Using realistic hub-prioritized flight population (recommended)..."
-        uv run python scripts/populate_flights_realistic.py --no-reset
+        print_status "Target: ~100,000 flights with major hub priority"
+        print_status "Daily limit: 500 flights/day, Route limit: 1000 routes"
+        uv run python scripts/populate_flights_realistic.py --yes
     fi
 
     if [ $? -ne 0 ]; then

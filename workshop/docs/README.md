@@ -1,4 +1,4 @@
-# FlughafenDB Workshop: Step-by-Step Guide
+# Cache Me, If You Can: Valkey Edition
 
 A comprehensive hands-on guide to explore caching strategies with Valkey through practical database queries and real-world aviation data analysis.
 
@@ -15,15 +15,15 @@ This guide demonstrates key concepts from simple database queries to complex cac
 
 Before starting, ensure you have:
 - Database server running (MySQL/MariaDB/PostgreSQL)
-- Valkey server running
+- [Valkey](https://valkey.io/) server running
 - Command-line tools installed: `mycli`/`pgcli` and `valkey-cli`
-- FlughafenDB data populated (see main README.md)
+- [FlughafenDB](https://github.com/stefanproell/flughafendb/) data populated (see main README.md)
 
 ## Workshop Structure
 
 ### Part 1: Database Fundamentals
 - Basic queries and performance analysis
-- Understanding query costs with EXPLAIN
+- Understanding query costs with `EXPLAIN`
 - Identifying expensive operations
 
 ### Part 2: Caching Introduction
@@ -36,8 +36,6 @@ Before starting, ensure you have:
 - Cache invalidation strategies
 - Real-world scenarios
 
----
-
 ## Part 1: Database Query Fundamentals
 
 ### Step 1: Connect to Your Database
@@ -45,6 +43,7 @@ Before starting, ensure you have:
 First, connect to your database using the appropriate CLI tool:
 
 **For MySQL/MariaDB:**
+
 ```bash
 # Connect using mycli (enhanced MySQL client)
 mycli -u flughafen_user -p -D flughafendb
@@ -79,18 +78,30 @@ DESCRIBE airport;     -- MySQL/MariaDB
 ```
 
 **Expected Output:**
+
 ```
-+---------------+--------------+------+-----+---------+----------------+
-| Field         | Type         | Null | Key | Default | Extra          |
-+---------------+--------------+------+-----+---------+----------------+
-| airport_id    | int          | NO   | PRI | NULL    | auto_increment |
-| iata          | varchar(3)   | YES  | MUL | NULL    |                |
-| icao          | varchar(4)   | NO   | UNI | NULL    |                |
-| name          | varchar(200) | NO   | MUL | NULL    |                |
-| airport_type  | varchar(20)  | YES  |     | airport |                |
-| data_source   | varchar(50)  | YES  |     | NULL    |                |
-| openflights_id| int          | YES  | MUL | NULL    |                |
-+---------------+--------------+------+-----+---------+----------------+
++-----------------------+
+| Tables_in_flughafendb |
++-----------------------+
+| airline               |
+| airplane              |
+| airplane_type         |
+| airport               |
+| airport_geo           |
+| airport_reachable     |
+| booking               |
+| city                  |
+| city_airport_relation |
+| country               |
+| employee              |
+| flight                |
+| flight_log            |
+| flightschedule        |
+| passenger             |
+| passengerdetails      |
+| route                 |
+| weatherdata           |
++-----------------------+
 ```
 
 ### Step 3: Simple Query - Find Airports by Country
@@ -98,18 +109,40 @@ DESCRIBE airport;     -- MySQL/MariaDB
 Let's start with a basic query to find airports in a specific country:
 
 ```sql
--- Find all airports in Germany
-SELECT 
+-- Find first 10 airports by name (alphabetically) in United States of America (USA)
+SELECT
     a.name,
     a.iata,
     a.icao,
     ag.city,
-    ag.country
+    ag.country, 
+    ag.iso_a3
 FROM airport a
 JOIN airport_geo ag ON a.airport_id = ag.airport_id
-WHERE ag.country = 'Germany'
+WHERE a.iata IS NOT null 
+    AND ag.iso_a3 = 'USA'
 ORDER BY a.name
-LIMIT 10;
+LIMIT 10 OFFSET 0;
+```
+
+If we want to be more specific to find airports in New York City.
+
+```sql
+-- Find all airports in New York City
+SELECT
+    a.name,
+    a.iata,
+    a.icao,
+    ag.city,
+    ag.country, 
+    ag.iso_a3
+FROM airport a
+JOIN airport_geo ag ON a.airport_id = ag.airport_id
+WHERE a.iata IS NOT null 
+    AND ag.iso_a3 = 'USA' 
+    AND ag.city LIKE "%New York%"
+ORDER BY a.name
+LIMIT 10 OFFSET 0;
 ```
 
 **Expected Output:**
