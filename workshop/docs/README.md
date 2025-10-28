@@ -11,6 +11,10 @@ This guide demonstrates key concepts from simple database queries to complex cac
 3. Implement caching strategies with Valkey
 4. Monitor cache performance and behavior
 
+### Database Schema
+
+![FlughafenDB-schema](../static/FlughafenDB-schema.png)
+
 ## Prerequisites
 
 Before starting, ensure you have:
@@ -109,7 +113,7 @@ DESCRIBE airport;     -- MySQL/MariaDB
 Let's start with a basic query to find airports in a specific country:
 
 ```sql
--- Find first 10 airports by name (alphabetically) in United States of America (USA)
+-- Find first 10 airports by name (alphabetically) in Germany (Deutschland)
 SELECT
     a.name,
     a.iata,
@@ -120,10 +124,14 @@ SELECT
 FROM airport a
 JOIN airport_geo ag ON a.airport_id = ag.airport_id
 WHERE a.iata IS NOT null 
-    AND ag.iso_a3 = 'USA'
+    AND ag.iso_a3 = 'DEU'
 ORDER BY a.name
 LIMIT 10 OFFSET 0;
 ```
+
+**Expected Output:**
+
+
 
 If we want to be more specific to find airports in New York City.
 
@@ -143,6 +151,19 @@ WHERE a.iata IS NOT null
     AND ag.city LIKE "%New York%"
 ORDER BY a.name
 LIMIT 10 OFFSET 0;
+```
+
+**Expected Output:**
+
+```bash
++--------------------------------------+------+------+----------+---------------+--------+
+| name                                 | iata | icao | city     | country       | iso_a3 |
++--------------------------------------+------+------+----------+---------------+--------+
+| Downtown-Manhattan/Wall St Heliport  | JRB  | KJRB | New York | United States | USA    |
+| John F Kennedy International Airport | JFK  | KJFK | New York | United States | USA    |
+| La Guardia Airport                   | LGA  | KLGA | New York | United States | USA    |
+| West 30th St. Heliport               | JRA  | KJRA | New York | United States | USA    |
++--------------------------------------+------+------+----------+---------------+--------+
 ```
 
 **Expected Output:**
@@ -252,8 +273,6 @@ WHERE a.iata = 'JFK';
 - Much more efficient! Uses index on IATA code (type: ref)
 - Only examines 1 row instead of scanning the entire table
 - This query is fast and might not need caching
-
----
 
 ## Part 2: Introduction to Valkey Caching
 
@@ -379,8 +398,6 @@ Value at:0x7f8b8c0a5a40 refcount:1 encoding:embstr serializedlength:445 lru:1572
 ```
 
 **Observation:** Cache retrieval is typically 10-100x faster than database queries.
-
----
 
 ## Part 3: User-Facing Query Scenarios
 
@@ -938,8 +955,6 @@ UPDATE airport SET name = 'Updated Airport Name' WHERE iata = 'ATL';
 127.0.0.1:6379> EXPIRE airport:ATL:flight_count 300     # 5 minutes for dynamic data
 ```
 
----
-
 ## Part 4: Real-World Scenarios
 
 ### Step 16: Session Management Caching
@@ -995,8 +1010,6 @@ OK
 127.0.0.1:6379> SET cache:lock:expensive_query "locked" EX 60 NX
 (nil)
 ```
-
----
 
 ## Part 5: Performance Analysis and Optimization
 
@@ -1060,8 +1073,6 @@ return {start_time, end_time}
 127.0.0.1:6379> INFO stats | grep evicted
 ```
 
----
-
 ## Part 6: Monitoring and Observability
 
 ### Step 22: Set Up Monitoring
@@ -1104,8 +1115,6 @@ else
 end
 " 0
 ```
-
----
 
 ## Workshop Summary and Key Takeaways
 
@@ -1196,8 +1205,6 @@ end
    - Set up proper backup and recovery procedures
    - Implement security measures (authentication, encryption)
    - Plan for capacity and scaling requirements
-
----
 
 ## Troubleshooting Common Issues
 
