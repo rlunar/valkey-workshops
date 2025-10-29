@@ -1,266 +1,256 @@
-# FlughafenDB Population Scripts
+# Database Backup and Restore Scripts
 
-This directory contains scripts for populating the FlughafenDB database with realistic test data.
+This directory contains enhanced scripts for backing up and restoring the FlughafenDB database, supporting both MySQL/MariaDB and PostgreSQL.
 
-## Passenger Population Script
+## Scripts Overview
 
-### Overview
+### `backup.sh`
+Creates a backup of the FlughafenDB database based on the configuration in `.env`.
 
-The `populate_passengers.py` script generates realistic passenger data with geographic distributions that reflect real-world travel patterns. The script creates 10 million passenger records by default, with distributions favoring:
+**Features:**
+- Supports MySQL, MariaDB, and PostgreSQL
+- Automatic database type detection from `.env`
+- Connection testing before backup
+- Automatic compression with gzip
+- Timestamped backup files
+- Automatic cleanup of old backups (>7 days)
+- Colored output for better readability
+- Error handling and validation
 
-- Major metropolitan areas and business hubs
-- Economically developed countries with high travel volumes
-- Popular international travel destinations
-- Realistic age distributions (peak at 25-45 for business travelers)
+### `restore.sh`
+Restores the FlughafenDB database from a backup file.
 
-### Geographic Distribution
+**Features:**
+- Interactive backup file selection
+- Support for compressed (.gz) backup files
+- Database connection testing
+- Confirmation prompts for safety
+- Support for both MySQL/MariaDB and PostgreSQL
+- Colored output and progress indicators
 
-The script uses weighted distributions based on travel statistics:
+### `test-backup.sh`
+Tests the backup configuration without performing an actual backup.
 
-**High Volume (>5% each):**
-- United States (25.0%) - Major cities like NYC, LA, Chicago
-- United Kingdom (8.5%) - London, Manchester, Birmingham
-- China (8.2%) - Beijing, Shanghai, Shenzhen
-- Germany (7.8%) - Berlin, Munich, Frankfurt
-- France (6.9%) - Paris, Lyon, Marseille
-- Japan (6.5%) - Tokyo, Osaka, Yokohama
+**Features:**
+- Validates `.env` configuration
+- Checks for required database client tools
+- Tests database connectivity
+- Lists existing backups
+- Provides installation instructions for missing tools
 
-**Medium Volume (2-5% each):**
-- Italy, Spain, Australia, South Korea, India, Brazil, Canada, Saudi Arabia
+## Prerequisites
 
-**Lower Volume (1-2% each):**
-- Netherlands, Sweden, Russia, Norway, Denmark, Finland
-
-### Quick Start
-
-#### Unified Tool (Recommended)
+### For MySQL/MariaDB
 ```bash
-# Show all available options
-python scripts/passenger_tools.py help
+# Ubuntu/Debian
+sudo apt-get install mysql-client
 
-# Generate 10M records (default)
-python scripts/passenger_tools.py populate
+# macOS
+brew install mysql-client
 
-# Test with small dataset first
-python scripts/passenger_tools.py test
-
-# Monitor progress during population
-python scripts/passenger_tools.py monitor
-
-# Validate data quality after completion
-python scripts/passenger_tools.py validate
+# CentOS/RHEL
+sudo yum install mysql
 ```
 
-### Usage
-
-#### Full Population (10 Million Records)
+### For PostgreSQL
 ```bash
-# Default: 10 million records in batches of 10,000
-python scripts/populate_passengers.py
+# Ubuntu/Debian
+sudo apt-get install postgresql-client
 
-# Custom parameters
-python scripts/populate_passengers.py --total-records 5000000 --batch-size 5000
+# macOS
+brew install postgresql
+
+# CentOS/RHEL
+sudo yum install postgresql
 ```
 
-#### Test Run (Small Dataset)
-```bash
-# Test with 1,000 records
-python scripts/test_passenger_generation.py
-```
+## Configuration
 
-#### Monitor Progress
-```bash
-# Monitor progress with default settings (check every 30 seconds)
-python scripts/monitor_population.py
-
-# Custom monitoring
-python scripts/monitor_population.py --target 5000000 --interval 60
-
-# Get current statistics only
-python scripts/monitor_population.py --stats-only
-```
-
-#### Validate Data Quality
-```bash
-# Run comprehensive data validation and analysis
-python scripts/validate_passenger_data.py
-```
-
-### Parameters
-
-- `--total-records`: Number of records to generate (default: 10,000,000)
-- `--batch-size`: Batch size for database inserts (default: 10,000, max: 50,000)
-
-### Prerequisites
-
-1. **Database Setup**: Ensure your database is configured in `.env` file
-2. **Dependencies**: Install required packages:
+1. Copy `.env.example` to `.env`:
    ```bash
-   pip install faker
-   # or if using uv:
-   uv add faker
+   cp .env.example .env
    ```
 
-### Performance Considerations
+2. Edit `.env` with your database credentials:
+   ```bash
+   # Database type: mysql, mariadb, postgresql, or postgres
+   DB_TYPE=mysql
+   
+   # Database connection details
+   DB_HOST=localhost
+   DB_PORT=3306
+   DB_NAME=flughafendb
+   DB_USER=your_username
+   DB_PASSWORD=your_password
+   ```
 
-- **Memory Usage**: The script processes data in batches to manage memory efficiently
-- **Database Performance**: Larger batch sizes are faster but use more memory
-- **Estimated Runtime**: ~2-4 hours for 10 million records (depends on database performance)
-- **Storage**: Approximately 2-3 GB of database storage for 10 million records
+## Usage
 
-### Data Characteristics
-
-**Passenger Table:**
-- Unique passport numbers (2 letters + 7 digits)
-- Realistic first/last names using locale-appropriate Faker instances
-- Primary key auto-generated
-
-**PassengerDetails Table:**
-- Age distribution: 18-80 years, weighted toward 25-45 (business travelers)
-- Gender: Random M/F distribution
-- Addresses: Locale-appropriate street addresses
-- Contact Info: 85% have email, 75% have phone numbers
-- Geographic distribution matches travel patterns
-
-### Example Output
-
-```
-Starting passenger population: 10,000,000 records in batches of 10,000
-Processing batch 1/1000 (10,000 records)...
-Progress: 10,000/10,000,000 (0.1%)
-Processing batch 2/1000 (10,000 records)...
-Progress: 20,000/10,000,000 (0.2%)
-...
-
-Completed! Inserted 10,000,000 passenger records.
-
-Geographic Distribution Summary:
-  United States: ~2,500,000 passengers (25.0%)
-  United Kingdom: ~850,000 passengers (8.5%)
-  China: ~820,000 passengers (8.2%)
-  Germany: ~780,000 passengers (7.8%)
-  ...
+### Test Configuration
+Before running backups, test your configuration:
+```bash
+./scripts/test-backup.sh
 ```
 
-### Error Handling
+### Create Backup
+```bash
+./scripts/backup.sh
+```
 
-The script includes comprehensive error handling for:
-- Database connection issues
-- Memory constraints
-- Duplicate passport number generation
-- Batch processing failures
+This will:
+- Create a timestamped backup file in `./backups/`
+- Compress the backup with gzip
+- Clean up old backups (>7 days)
 
-### Monitoring Progress
+### Restore Database
 
-The script provides real-time progress updates including:
-- Current batch being processed
-- Total records inserted
-- Percentage completion
-- Geographic distribution summary at completion
+#### Interactive Mode (Recommended)
+```bash
+./scripts/restore.sh
+```
 
-## Booking Population System
+This will show available backups and let you select one.
 
-### Overview
+#### Direct File Restore
+```bash
+./scripts/restore.sh backups/flughafendb_backup_20231028_143022.sql.gz
+```
 
-The booking population system generates realistic airline booking data that follows industry patterns and business rules. It creates bookings that respect aircraft capacity, prevent passenger conflicts, and implement sophisticated occupancy patterns.
+## Backup File Format
 
-### Key Features
+Backup files are named with the following pattern:
+```
+flughafendb_backup_YYYYMMDD_HHMMSS.sql[.gz]
+```
 
-**🎯 Realistic Occupancy Patterns**
-- Peak times (90-95% occupancy): Business hours, weekdays, holidays
-- Off-peak times (60-75% occupancy): Nights, weekends, regular periods
-- Dynamic calculation based on departure timing
+Examples:
+- `flughafendb_backup_20231028_143022.sql.gz` (compressed)
+- `flughafendb_backup_20231028_143022.sql` (uncompressed)
 
-**👥 Passenger Management**
-- No double-booking: Prevents overlapping flight conflicts
-- 2-hour buffer for connections
-- Automatic passenger pool management
+## Directory Structure
 
-**✈️ Business vs Leisure Travel**
-- Business travelers: 85% book returns (1-7 days)
-- Leisure travelers: 70% book returns (3-21 days)
-- Realistic timing preferences
+```
+scripts/
+├── README.md           # This file
+├── backup.sh          # Main backup script
+├── restore.sh         # Main restore script
+└── test-backup.sh     # Configuration test script
 
-**💺 Seat Assignment System**
-- Aircraft-appropriate seat maps
-- Class distribution: 85% economy, 12% business, 3% first
-- Unique seat assignments per flight
+backups/               # Created automatically
+├── flughafendb_backup_20231028_143022.sql.gz
+├── flughafendb_backup_20231027_120000.sql.gz
+└── ...
+```
 
-**💰 Dynamic Pricing**
-- Distance-based pricing ($0.15/km base)
-- Class multipliers (economy 1x, business 3.5x, first 6x)
-- Peak time surcharge (30%)
-- Return flight discount (10%)
+## Automation
 
-### Quick Start
+### Cron Job Example
+To run daily backups at 2 AM:
 
 ```bash
-# Basic booking population
-python scripts/populate_bookings.py
+# Edit crontab
+crontab -e
 
-# Clear existing bookings first
-python scripts/populate_bookings.py --clear
-
-# Test the logic with sample data
-python scripts/test_booking_population.py
-
-# Validate booking data integrity
-python scripts/validate_booking_system.py
+# Add this line
+0 2 * * * cd /path/to/valkey-caching-workshop && ./scripts/backup.sh >> /var/log/flughafendb-backup.log 2>&1
 ```
 
-### Usage Options
+### Systemd Timer Example
+Create `/etc/systemd/system/flughafendb-backup.service`:
 
+```ini
+[Unit]
+Description=FlughafenDB Backup
+After=network.target
+
+[Service]
+Type=oneshot
+User=your_user
+WorkingDirectory=/path/to/valkey-caching-workshop
+ExecStart=/path/to/valkey-caching-workshop/scripts/backup.sh
+```
+
+Create `/etc/systemd/system/flughafendb-backup.timer`:
+
+```ini
+[Unit]
+Description=Run FlughafenDB backup daily
+Requires=flughafendb-backup.service
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+```
+
+Enable and start:
 ```bash
-# Custom batch size for performance tuning
-python scripts/populate_bookings.py --batch-size 5000
-
-# Enable verbose output for debugging
-python scripts/populate_bookings.py --verbose
-
-# Full workflow
-python scripts/populate_bookings.py --clear --verbose
+sudo systemctl enable flughafendb-backup.timer
+sudo systemctl start flughafendb-backup.timer
 ```
 
-### Prerequisites
+## Troubleshooting
 
-Before running booking population:
-1. Populated `flight` table
-2. Populated `passenger` table
-3. Populated `airplane` table (for capacity data)
-4. Database tables created via `setup_database.py`
+### Common Issues
 
-### Performance Characteristics
+1. **"mysql client not found"**
+   - Install MySQL client tools (see Prerequisites)
 
-- **Processing Rate**: 1,000-5,000 bookings/second
-- **Memory Usage**: Moderate (tracks passenger conflicts)
-- **Database Load**: Optimized batch inserts
+2. **"Connection failed"**
+   - Check database server is running
+   - Verify credentials in `.env`
+   - Check firewall settings
 
-### Data Quality Assurance
+3. **"Permission denied"**
+   - Make scripts executable: `chmod +x scripts/*.sh`
+   - Check backup directory permissions
 
-The system enforces strict business rules:
-- No overbooking (never exceeds aircraft capacity)
-- No double-booking (passengers can't be in two places at once)
-- Realistic occupancy following airline industry patterns
-- Market-realistic ticket pricing
-- Valid seat assignments for each aircraft type
+4. **"Backup file is empty"**
+   - Check database user permissions
+   - Verify database name exists
+   - Check disk space
 
-### Validation and Monitoring
-
+### Debug Mode
+Run scripts with debug output:
 ```bash
-# Comprehensive validation
-python scripts/validate_booking_system.py
+bash -x ./scripts/backup.sh
 ```
 
-Checks include:
-- Duplicate seat detection
-- Occupancy rate analysis
-- Price distribution validation
-- Peak vs off-peak patterns
-- Passenger booking frequency
+### Manual Testing
+Test database connection manually:
 
-### Documentation
+**MySQL:**
+```bash
+mysql -h $DB_HOST -P $DB_PORT -u $DB_USER -p$DB_PASSWORD $DB_NAME -e "SELECT COUNT(*) FROM airport;"
+```
 
-For detailed information, see:
-- `scripts/README_booking_population.md` - Complete system documentation
-- `scripts/test_booking_population.py` - Logic validation
-- `scripts/validate_booking_system.py` - Data integrity checks
+**PostgreSQL:**
+```bash
+PGPASSWORD=$DB_PASSWORD psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME -c "SELECT COUNT(*) FROM airport;"
+```
+
+## Security Considerations
+
+1. **Password Security**: The `.env` file contains sensitive credentials. Ensure it's:
+   - Not committed to version control (included in `.gitignore`)
+   - Has restricted permissions: `chmod 600 .env`
+
+2. **Backup Security**: Backup files may contain sensitive data:
+   - Store in secure location
+   - Consider encryption for long-term storage
+   - Implement proper access controls
+
+3. **Network Security**: For remote databases:
+   - Use SSL/TLS connections when possible
+   - Consider VPN for database access
+   - Restrict database access by IP
+
+## Support
+
+For issues or questions:
+1. Check the troubleshooting section above
+2. Run `./scripts/test-backup.sh` to validate configuration
+3. Check database server logs
+4. Verify network connectivity and credentials
