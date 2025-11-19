@@ -1,0 +1,15 @@
+[project]
+name = "cache-me-if-you-can"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "mysql-connector-python>=9.5.0",
+    "pandas>=2.3.3",
+    "plotly>=6.5.0",
+    "redis>=7.1.0",
+    "streamlit>=1.51.0",
+    "valkey[libvalkey]>=6.1.1",
+    "watchdog>=6.0.0",
+]
