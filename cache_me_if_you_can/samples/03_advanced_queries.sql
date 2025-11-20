@@ -2,6 +2,8 @@
 -- ADVANCED QUERIES - Complex Joins & Aggregations
 -- ============================================
 
+USE flughafendb_large;
+
 -- 1. Last 10 passenger bookings with full flight and airport details
 SELECT 
     b.booking_id,
@@ -65,9 +67,9 @@ SELECT
     f.departure,
     f.arrival,
     a_from.name as departure_airport,
-    a_from.city as departure_city,
+#    a_from.city as departure_city,
     a_to.name as arrival_airport,
-    a_to.city as arrival_city,
+#    a_to.city as arrival_city,
     al.airlinename,
     apt.identifier as airplane_type,
     ap.capacity as airplane_capacity
@@ -243,3 +245,4 @@ LEFT JOIN airport_geo ag_to ON a_to.airport_id = ag_to.airport_id
 INNER JOIN airline al ON f.airline_id = al.airline_id
 ORDER BY b.booking_id DESC
 LIMIT 10;
+

@@ -2,6 +2,8 @@
 -- MEDIUM QUERIES - Joins and Filtering
 -- ============================================
 
+USE flughafendb_large;
+
 -- 1. Get passenger with their details by passenger ID
 SELECT 
     p.passenger_id,
@@ -148,6 +150,6 @@ SELECT
     pd.country
 FROM passenger p
 INNER JOIN passengerdetails pd ON p.passenger_id = pd.passenger_id
-WHERE pd.city = 'New York'
-  AND pd.country = 'United States'
+WHERE pd.country = 'United States'
 LIMIT 15;
+
