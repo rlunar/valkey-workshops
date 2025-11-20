@@ -67,11 +67,11 @@ def demo_simple_queries(cache: CacheAside):
     """
     
     print("\n🔍 Query 12: Get passenger with details by ID")
-    print("   First execution (CACHE_MISS expected):")
+    print("   First execution (CACHE_MISS ❌ expected):")
     results, source, latency = cache.execute_query(query_12, ttl=3600)
     print_query_result("   Execution 1", results, source, latency)
     
-    print("\n   Second execution (CACHE_HIT expected):")
+    print("\n   Second execution (CACHE_HIT ✅ expected):")
     results, source, latency = cache.execute_query(query_12)
     print_query_result("   Execution 2", results, source, latency)
     
@@ -92,11 +92,11 @@ def demo_simple_queries(cache: CacheAside):
     """
     
     print("\n\n🔍 Query 14: Get airport with geographic details by IATA")
-    print("   First execution (CACHE_MISS expected):")
+    print("   First execution (CACHE_MISS ❌ expected):")
     results, source, latency = cache.execute_query(query_14, ttl=7200)
     print_query_result("   Execution 1", results, source, latency)
     
-    print("\n   Second execution (CACHE_HIT expected):")
+    print("\n   Second execution (CACHE_HIT ✅ expected):")
     results, source, latency = cache.execute_query(query_14)
     print_query_result("   Execution 2", results, source, latency)
 
@@ -124,13 +124,13 @@ def demo_medium_queries(cache: CacheAside):
     """
     
     print("\n🔍 Query 6b: All distinct flights from JFK")
-    print("   First execution (CACHE_MISS expected):")
+    print("   First execution (CACHE_MISS ❌ expected):")
     results, source, latency = cache.execute_query(query_6b, ttl=1800)
     print_query_result("   Execution 1", results, source, latency, show_data=False)
     if results:
         print(f"   Top 3 destinations: {results[:3]}")
     
-    print("\n   Second execution (CACHE_HIT expected):")
+    print("\n   Second execution (CACHE_HIT ✅ expected):")
     results, source, latency = cache.execute_query(query_6b)
     print_query_result("   Execution 2", results, source, latency, show_data=False)
     
@@ -150,11 +150,11 @@ def demo_medium_queries(cache: CacheAside):
     """
     
     print("\n\n🔍 Query 10: Find passengers by country")
-    print("   First execution (CACHE_MISS expected):")
+    print("   First execution (CACHE_MISS ❌ expected):")
     results, source, latency = cache.execute_query(query_10, ttl=1800)
     print_query_result("   Execution 1", results, source, latency, show_data=False)
     
-    print("\n   Second execution (CACHE_HIT expected):")
+    print("\n   Second execution (CACHE_HIT ✅ expected):")
     results, source, latency = cache.execute_query(query_10)
     print_query_result("   Execution 2", results, source, latency, show_data=False)
 
@@ -196,11 +196,11 @@ def demo_advanced_queries(cache: CacheAside):
     """
     
     print("\n🔍 Query 3: Upcoming flights for passenger with full details")
-    print("   First execution (CACHE_MISS expected):")
+    print("   First execution (CACHE_MISS ❌ expected):")
     results, source, latency = cache.execute_query(query_3, ttl=300)
     print_query_result("   Execution 1", results, source, latency, show_data=False)
     
-    print("\n   Second execution (CACHE_HIT expected):")
+    print("\n   Second execution (CACHE_HIT ✅ expected):")
     results, source, latency = cache.execute_query(query_3)
     print_query_result("   Execution 2", results, source, latency, show_data=False)
     
@@ -221,11 +221,11 @@ def demo_advanced_queries(cache: CacheAside):
     """
     
     print("\n\n🔍 Query 4: Flight manifest for flight 115")
-    print("   First execution (CACHE_MISS expected):")
+    print("   First execution (CACHE_MISS ❌ expected):")
     results, source, latency = cache.execute_query(query_4, ttl=600)
     print_query_result("   Execution 1", results, source, latency, show_data=False)
     
-    print("\n   Second execution (CACHE_HIT expected):")
+    print("\n   Second execution (CACHE_HIT ✅ expected):")
     results, source, latency = cache.execute_query(query_4)
     print_query_result("   Execution 2", results, source, latency, show_data=False)
     
@@ -263,11 +263,11 @@ def demo_advanced_queries(cache: CacheAside):
     """
     
     print("\n\n🔍 Query 10: Recent bookings with full geographic details")
-    print("   First execution (CACHE_MISS expected):")
+    print("   First execution (CACHE_MISS ❌ expected):")
     results, source, latency = cache.execute_query(query_10, ttl=300)
     print_query_result("   Execution 1", results, source, latency, show_data=False)
     
-    print("\n   Second execution (CACHE_HIT expected):")
+    print("\n   Second execution (CACHE_HIT ✅ expected):")
     results, source, latency = cache.execute_query(query_10)
     print_query_result("   Execution 2", results, source, latency, show_data=False)
 
@@ -292,12 +292,12 @@ def demo_cache_invalidation(cache: CacheAside):
     print("\n🔍 Testing cache invalidation")
     
     # First execution
-    print("\n   1. First execution (CACHE_MISS):")
+    print("\n   1. First execution (CACHE_MISS ❌):")
     results, source, latency = cache.execute_query(query)
     print_query_result("      ", results, source, latency)
     
     # Second execution (cached)
-    print("\n   2. Second execution (CACHE_HIT):")
+    print("\n   2. Second execution (CACHE_HIT ✅):")
     results, source, latency = cache.execute_query(query)
     print_query_result("      ", results, source, latency)
     
@@ -307,7 +307,7 @@ def demo_cache_invalidation(cache: CacheAside):
     print(f"      Cache invalidated: {invalidated}")
     
     # Third execution (cache miss after invalidation)
-    print("\n   4. After invalidation (CACHE_MISS):")
+    print("\n   4. After invalidation (CACHE_MISS ❌):")
     results, source, latency = cache.execute_query(query)
     print_query_result("      ", results, source, latency)
 
