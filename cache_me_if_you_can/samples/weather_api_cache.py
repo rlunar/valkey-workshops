@@ -75,6 +75,38 @@ class SimpleCache:
         except Exception as e:
             print(f"Cache SET error for key '{key}': {e}")
     
+    def acquire_lock(self, key: str, timeout: int = 10) -> bool:
+        """
+        Acquire a distributed lock for a key to prevent cache stampede.
+        
+        Args:
+            key: The cache key to lock
+            timeout: Lock timeout in seconds (default: 10)
+        
+        Returns:
+            True if lock was acquired, False otherwise
+        """
+        lock_key = f"lock:{key}"
+        try:
+            # SET NX (set if not exists) with expiration
+            return self.client.set(lock_key, "1", nx=True, ex=timeout)
+        except Exception as e:
+            print(f"Lock ACQUIRE error for key '{key}': {e}")
+            return False
+    
+    def release_lock(self, key: str) -> None:
+        """
+        Release a distributed lock for a key.
+        
+        Args:
+            key: The cache key to unlock
+        """
+        lock_key = f"lock:{key}"
+        try:
+            self.client.delete(lock_key)
+        except Exception as e:
+            print(f"Lock RELEASE error for key '{key}': {e}")
+    
     def clear(self) -> None:
         """Clear all cache entries (use with caution in production!)."""
         try:
@@ -135,7 +167,7 @@ def fetch_weather_without_cache(cities: list) -> tuple:
 
 
 def fetch_weather_with_cache(cities: list, cache: SimpleCache, run_number: int = 1) -> tuple:
-    """Fetch weather data with caching."""
+    """Fetch weather data with caching and distributed locking."""
     print("\n" + "=" * 70)
     print(f"FETCHING WITH CACHE (Run #{run_number})")
     print("=" * 70)
@@ -143,6 +175,7 @@ def fetch_weather_with_cache(cities: list, cache: SimpleCache, run_number: int =
     results = []
     cache_hits = 0
     cache_misses = 0
+    lock_waits = 0
     start_time = time.time()
     
     for i, city in enumerate(cities, 1):
@@ -157,11 +190,47 @@ def fetch_weather_with_cache(cities: list, cache: SimpleCache, run_number: int =
             cache_hits += 1
             status = "CACHE HIT"
         else:
-            # Cache miss - fetch from API and store in cache
-            weather = WeatherService.get_weather(city['country'], city['zip'])
-            cache.set(cache_key, weather)
-            cache_misses += 1
-            status = "CACHE MISS"
+            # Cache miss - try to acquire lock to prevent stampede
+            lock_acquired = cache.acquire_lock(cache_key, timeout=10)
+            
+            if lock_acquired:
+                try:
+                    # Double-check cache after acquiring lock (another thread might have populated it)
+                    cached_data = cache.get(cache_key)
+                    if cached_data:
+                        weather = cached_data
+                        cache_hits += 1
+                        status = "CACHE HIT (after lock)"
+                    else:
+                        # Fetch from API and store in cache
+                        weather = WeatherService.get_weather(city['country'], city['zip'])
+                        cache.set(cache_key, weather)
+                        cache_misses += 1
+                        status = "CACHE MISS (populated)"
+                finally:
+                    # Always release the lock
+                    cache.release_lock(cache_key)
+            else:
+                # Could not acquire lock, wait and retry getting from cache
+                lock_waits += 1
+                status = "LOCK WAIT"
+                max_retries = 20
+                retry_delay = 0.5
+                
+                for retry in range(max_retries):
+                    time.sleep(retry_delay)
+                    cached_data = cache.get(cache_key)
+                    if cached_data:
+                        weather = cached_data
+                        cache_hits += 1
+                        status = f"CACHE HIT (waited {(retry + 1) * retry_delay:.1f}s)"
+                        break
+                else:
+                    # Timeout waiting for lock, fetch anyway
+                    weather = WeatherService.get_weather(city['country'], city['zip'])
+                    cache.set(cache_key, weather)
+                    cache_misses += 1
+                    status = "CACHE MISS (timeout)"
         
         city_elapsed = time.time() - city_start
         results.append(weather)
@@ -172,6 +241,8 @@ def fetch_weather_with_cache(cities: list, cache: SimpleCache, run_number: int =
     print(f"\nCache Statistics:")
     print(f"  Hits:   {cache_hits}")
     print(f"  Misses: {cache_misses}")
+    if lock_waits > 0:
+        print(f"  Lock Waits: {lock_waits}")
     print(f"  Hit Rate: {(cache_hits / len(cities) * 100):.1f}%")
     print(f"\nTotal time: {format_time(total_time)}")
     
