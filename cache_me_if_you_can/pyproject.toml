@@ -15,6 +15,7 @@ dependencies = [
     "pymysql>=1.1.2",
     "python-dotenv>=1.2.1",
     "redis>=7.1.0",
+    "requests>=2.32.5",
     "rich>=14.2.0",
     "sqlalchemy>=2.0.44",
     "sqlmodel>=0.0.27",

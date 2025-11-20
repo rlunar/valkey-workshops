@@ -13,4 +13,12 @@ uv add streamlit
 uv add "valkey[libvalkey]"
 uv add pandas
 uv add plotly
+
+podman run -d --rm --name valkey-bundle -p 16379:6379 valkey/valkey-bundle:8-alpine
+
+ollama pull tinyllama
+ollama pull llama3.2
+ollama pull codellama
+
+uv run python samples/nlp_to_sql.py llama3.2 interactive
 ```
