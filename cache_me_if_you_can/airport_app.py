@@ -1,5 +1,8 @@
 import streamlit as st
-import redis
+try:
+    import valkey
+except ImportError:
+    import redis as valkey
 import mysql.connector
 import time
 import json
@@ -26,7 +29,7 @@ def get_valkey_connection():
             def delete(self, key): 
                 if f"mock_valkey:{key}" in st.session_state: del st.session_state[f"mock_valkey:{key}"]
         return MockValkey()
-    return redis.Redis(**VALKEY_CONFIG)
+    return valkey.Redis(**VALKEY_CONFIG)
 
 # --- DATA LOGIC: FLIGHT DETAILS ---
 def fetch_flight_db(flight_id):

@@ -52,8 +52,11 @@ class CacheAside:
         cache_port = int(os.getenv("CACHE_PORT", "6379"))
         
         if cache_type in ["redis", "valkey"]:
-            import redis
-            return redis.Redis(
+            try:
+                import valkey
+            except ImportError:
+                import redis as valkey
+            return valkey.Redis(
                 host=cache_host,
                 port=cache_port,
                 decode_responses=True

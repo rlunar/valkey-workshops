@@ -13,9 +13,9 @@ import numpy as np
 
 # Import Valkey/Redis
 try:
-    import valkey as redis
+    import valkey
 except ImportError:
-    import redis
+    import redis as valkey
 
 # Import embedding model
 from sentence_transformers import SentenceTransformer
@@ -44,7 +44,7 @@ class SemanticSQLCache:
         similarity_threshold: float = 0.70,
         ollama_model: str = "tinyllama"
     ):
-        self.redis_client = redis.Redis(
+        self.redis_client = valkey.Redis(
             host=redis_host,
             port=redis_port,
             decode_responses=False  # We'll handle encoding ourselves
@@ -73,7 +73,7 @@ class SemanticSQLCache:
             # Try to get index info
             self.redis_client.execute_command("FT.INFO", index_name)
             print(f"✅ Index '{index_name}' already exists")
-        except redis.ResponseError:
+        except valkey.ResponseError:
             # Index doesn't exist, create it
             try:
                 print(f"Creating vector search index '{index_name}'...")

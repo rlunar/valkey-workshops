@@ -84,13 +84,16 @@ except Exception as e:
     print(f"   ❌ Failed similarity test: {e}")
     sys.exit(1)
 
-# Test 5: Test Redis connection (optional)
-print("\n5. Testing Redis/Valkey connection...")
+# Test 5: Test Valkey connection (optional)
+print("\n5. Testing Valkey connection...")
 try:
-    import redis
-    r = redis.Redis(host='localhost', port=6379, decode_responses=True)
+    try:
+        import valkey
+    except ImportError:
+        import redis as valkey
+    r = valkey.Redis(host='localhost', port=6379, decode_responses=True)
     r.ping()
-    print("   ✅ Redis/Valkey connection successful")
+    print("   ✅ Valkey connection successful")
 except Exception as e:
     print(f"   ⚠️  Redis/Valkey not available: {e}")
     print("   ℹ️  This is optional - semantic search will work without it")

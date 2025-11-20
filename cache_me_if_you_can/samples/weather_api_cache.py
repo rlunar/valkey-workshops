@@ -33,13 +33,16 @@ class SimpleCache:
         Args:
             default_ttl: Default time-to-live in seconds (default: 900 = 15 minutes)
         """
-        import redis
+        try:
+            import valkey
+        except ImportError:
+            import redis as valkey
         
         self.default_ttl = default_ttl
         cache_host = os.getenv("CACHE_HOST", "localhost")
         cache_port = int(os.getenv("CACHE_PORT", "6379"))
         
-        self.client = redis.Redis(
+        self.client = valkey.Redis(
             host=cache_host,
             port=cache_port,
             decode_responses=True
@@ -49,7 +52,7 @@ class SimpleCache:
         try:
             self.client.ping()
             print(f"✓ Connected to Valkey at {cache_host}:{cache_port}")
-        except redis.ConnectionError as e:
+        except valkey.ConnectionError as e:
             print(f"✗ Failed to connect to Valkey at {cache_host}:{cache_port}")
             raise e
     
