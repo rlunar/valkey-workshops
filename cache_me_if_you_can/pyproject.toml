@@ -9,6 +9,7 @@ dependencies = [
     "pandas>=2.3.3",
     "plotly>=6.5.0",
     "redis>=7.1.0",
+    "sqlmodel>=0.0.27",
     "streamlit>=1.51.0",
     "valkey[libvalkey]>=6.1.1",
     "watchdog>=6.0.0",

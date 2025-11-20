@@ -83,3 +83,16 @@ ALTER TABLE
           'management',
           'logistics',
           'airfield');
+
+
+-- Update all flight dates by 10 years forward
+-- This makes the dataset more relevant for current demonstrations
+UPDATE flight 
+SET 
+    departure = DATE_ADD(departure, INTERVAL 10 YEAR),
+    arrival = DATE_ADD(arrival, INTERVAL 10 YEAR);
+
+UPDATE flight 
+SET 
+    departure = DATE_ADD(departure, INTERVAL 4 MONTH),
+    arrival = DATE_ADD(arrival, INTERVAL 4 MONTH);
