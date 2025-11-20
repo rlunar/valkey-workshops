@@ -53,7 +53,8 @@ INNER JOIN airport a_from ON f.`from` = a_from.airport_id
 INNER JOIN airport a_to ON f.`to` = a_to.airport_id
 INNER JOIN airline al ON f.airline_id = al.airline_id
 WHERE p.passenger_id = 1000
-ORDER BY f.departure DESC;
+ORDER BY f.departure DESC
+LIMIT 10;
 
 
 -- 3. Upcoming flights for a passenger with full details
@@ -86,7 +87,8 @@ INNER JOIN airplane ap ON f.airplane_id = ap.airplane_id
 INNER JOIN airplane_type apt ON ap.type_id = apt.type_id
 WHERE p.passenger_id = 1000
   AND f.departure > NOW()
-ORDER BY f.departure ASC;
+ORDER BY f.departure ASC
+LIMIT 10;
 
 -- 4. Flight manifest - all passengers on a specific flight
 SELECT 

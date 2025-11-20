@@ -103,11 +103,74 @@ Replace placeholder values:
 - `airline_id = 1` → Use actual airline ID
 - `'JFK'`, `'FRA'` → Use actual airport codes
 
-## Integration with Valkey Cache
+## Python Demos
+
+### cache_aside_demo.py
+**Cache-Aside (Lazy Loading) Pattern** - Demonstrates read-heavy caching strategy.
+
+Features:
+- Cache miss → Database query → Store in cache
+- Cache hit → Return cached data (fast)
+- Manual cache invalidation
+- Force refresh capability
+
+**Use cases:** Read-heavy workloads, data that changes infrequently
+
+See: [Cache-Aside Documentation](../docs/CACHE_ASIDE_README.md)
+
+---
+
+### write_through_cache_demo.py
+**Write-Through Cache Pattern** - Demonstrates data consistency for updates.
+
+Features:
+- Simultaneous database and cache updates
+- Flight departure time updates
+- Audit logging to `flight_log` table
+- Consistency verification between DB and cache
+- Automatic cleanup (restores original data)
+
+**Use cases:** Critical data updates (flight status, inventory, pricing)
+
+See: [Write-Through Cache Documentation](../docs/WRITE_THROUGH_CACHE_README.md)
+
+**Demo flow:**
+1. Initial read (cache miss)
+2. Second read (cache hit)
+3. Update flight times (write-through)
+4. Verify consistency
+5. Read updated data
+6. Restore original times
+
+---
+
+### nlp_to_sql.py
+**Natural Language to SQL** - Convert English questions to SQL queries.
+
+See: [NLP to SQL Documentation](../docs/nlp_to_sql_README.md)
+
+---
+
+### semantic_search.py
+**Semantic Search** - Find relevant database entities using embeddings.
+
+See: [Semantic Search Documentation](../docs/semantic_search_README.md)
+
+---
+
+## Integration with Cache Systems
 
 These queries are ideal candidates for caching:
 - **Simple queries**: Cache for 1 hour (rarely change)
 - **Medium queries**: Cache for 15-30 minutes
 - **Advanced queries**: Cache for 5-10 minutes (or invalidate on booking)
+
+### Caching Patterns
+
+| Pattern | Best For | Demo |
+|---------|----------|------|
+| Cache-Aside | Read-heavy workloads | `cache_aside_demo.py` |
+| Write-Through | Critical updates requiring consistency | `write_through_cache_demo.py` |
+| Write-Behind | High-throughput writes | (Not implemented) |
 
 See `airport_app.py` for cache-aside pattern implementation.
