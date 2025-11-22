@@ -72,7 +72,7 @@ class SemanticSQLCache:
             print(f"Host: {valkey_host}")
             print(f"Port: {valkey_port}")
         
-        self.valkey_client = valkey.Redis(
+        self.valkey_client = valkey.Valkey(
             host=valkey_host,
             port=valkey_port,
             decode_responses=False  # We'll handle encoding ourselves
@@ -153,8 +153,7 @@ class SemanticSQLCache:
                 except Exception as create_error:
                     print(f"⚠️  Warning: Could not create vector search index: {create_error}")
                     print(f"   Semantic search will fall back to exact matching only")
-                    print(f"   To enable vector search, ensure Valkey with RediSearch module is installed")
-                    print(f"   Install: https://redis.io/docs/stack/search/")
+                    print(f"   To enable vector search, ensure Valkey with Search module is installed")
             else:
                 # Some other error
                 print(f"⚠️  Warning: Error checking index: {e}")

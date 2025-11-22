@@ -42,7 +42,7 @@ class SimpleCache:
         cache_host = os.getenv("CACHE_HOST", "localhost")
         cache_port = int(os.getenv("CACHE_PORT", "6379"))
         
-        self.client = valkey.Redis(
+        self.client = valkey.Valkey(
             host=cache_host,
             port=cache_port,
             decode_responses=True

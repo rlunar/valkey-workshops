@@ -158,6 +158,52 @@ See: [Semantic Search Documentation](../docs/semantic_search_README.md)
 
 ---
 
+### multi_threaded_performance_test.py
+**Multi-threaded Performance Testing** - Benchmark database and cache performance under concurrent load.
+
+Features:
+- Simulates multiple concurrent users (threads)
+- Configurable read/write ratio
+- Cache-aside pattern implementation
+- Detailed metrics collection per second
+- JSON log output with comprehensive statistics
+- SSL/TLS support for Valkey connections
+
+**Metrics captured:**
+- Total queries and queries per second
+- Read/write operation breakdown
+- Cache hit/miss rates
+- Min/max/average query times
+- Time-series data for performance analysis
+
+**Usage examples:**
+```bash
+# Basic test: 4 users, 10 queries each, 80% reads
+python samples/multi_threaded_performance_test.py
+
+# High concurrency test
+python samples/multi_threaded_performance_test.py --users 20 --queries 100
+
+# Write-heavy workload with SSL
+python samples/multi_threaded_performance_test.py --users 10 --queries 50 --read_rate 30 --ssl true
+
+# Custom log tag for test identification
+python samples/multi_threaded_performance_test.py --users 8 --queries 200 --log_tag prod_baseline
+```
+
+**Output:**
+- Console: Real-time summary with operation counts and cache performance
+- JSON log: Detailed metrics in `logs/perf_test_TIMESTAMP_TAG.json`
+
+**Use cases:** 
+- Performance benchmarking
+- Capacity planning
+- Cache effectiveness analysis
+- Load testing before production deployment
+- Comparing different cache configurations
+
+---
+
 ## Integration with Cache Systems
 
 These queries are ideal candidates for caching:

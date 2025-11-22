@@ -48,7 +48,7 @@ All demo scripts are located in the `samples/` folder.
 Demonstrates lazy loading with queries of increasing complexity.
 
 ```bash
-python samples/cache_aside_demo.py
+uv run samples/cache_aside_demo.py
 ```
 
 **What it shows:**
@@ -67,7 +67,7 @@ python samples/cache_aside_demo.py
 Shows how to maintain cache consistency during data updates.
 
 ```bash
-python samples/write_through_cache_demo.py
+uv run samples/write_through_cache_demo.py
 ```
 
 **What it shows:**
@@ -85,7 +85,7 @@ python samples/write_through_cache_demo.py
 Convert natural language questions into SQL queries using Ollama.
 
 ```bash
-python samples/nlp_to_sql.py
+uv run samples/nlp_to_sql.py
 ```
 
 **Example queries:**
@@ -99,14 +99,14 @@ python samples/nlp_to_sql.py
 
 **Learn more:** [nlp_to_sql_README.md](nlp_to_sql_README.md)
 
----
+----
 
 ### 4. Semantic Search Demo
 
 Intelligent query caching using vector embeddings to find similar queries.
 
 ```bash
-python samples/semantic_search.py
+uv run samples/semantic_search.py
 ```
 
 **What it shows:**
@@ -131,7 +131,7 @@ python samples/semantic_search.py
 Real-world example of caching external API calls.
 
 ```bash
-python samples/weather_api_cache.py
+uv run samples/weather_api_cache.py
 ```
 
 **What it shows:**

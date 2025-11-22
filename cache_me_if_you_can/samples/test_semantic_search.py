@@ -96,7 +96,7 @@ try:
         import valkey
     except ImportError:
         import redis as valkey
-    r = valkey.Redis(host='localhost', port=6379, decode_responses=True)
+    r = valkey.Valkey(host='localhost', port=6379, decode_responses=True)
     r.ping()
     print("   ✅ Valkey connection successful")
 except Exception as e:

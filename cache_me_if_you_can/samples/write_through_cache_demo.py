@@ -54,7 +54,7 @@ class WriteThroughCache:
     
     def _create_cache_client(self) -> Any:
         """Create cache client based on environment variables."""
-        cache_type = os.getenv("CACHE_ENGINE", "redis").lower()
+        cache_type = os.getenv("CACHE_ENGINE", "valkey").lower()
         cache_host = os.getenv("CACHE_HOST", "localhost")
         cache_port = int(os.getenv("CACHE_PORT", "6379"))
         
@@ -80,7 +80,7 @@ class WriteThroughCache:
     
     def _cache_get(self, key: str) -> Optional[str]:
         """Get value from cache."""
-        cache_type = os.getenv("CACHE_ENGINE", "redis").lower()
+        cache_type = os.getenv("CACHE_ENGINE", "valkey").lower()
         
         try:
             if cache_type in ["redis", "valkey"]:
@@ -94,7 +94,7 @@ class WriteThroughCache:
     
     def _cache_set(self, key: str, value: str, ttl: int) -> None:
         """Set value in cache with TTL."""
-        cache_type = os.getenv("CACHE_ENGINE", "redis").lower()
+        cache_type = os.getenv("CACHE_ENGINE", "valkey").lower()
         
         try:
             if cache_type in ["redis", "valkey"]:
@@ -106,7 +106,7 @@ class WriteThroughCache:
     
     def _cache_delete(self, key: str) -> bool:
         """Delete value from cache."""
-        cache_type = os.getenv("CACHE_ENGINE", "redis").lower()
+        cache_type = os.getenv("CACHE_ENGINE", "valkey").lower()
         
         try:
             if cache_type in ["redis", "valkey"]:

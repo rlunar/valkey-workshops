@@ -243,3 +243,4 @@ Temporary Items
 .apdisk
 
 *.gz
+logs/*
