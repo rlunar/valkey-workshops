@@ -9,12 +9,27 @@ import json
 import pandas as pd
 import plotly.express as px
 import random
+import os
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # --- CONFIGURATION ---
-USE_MOCK_DATA = True  # Set False if you have real DB/Valkey
+USE_MOCK_DATA = os.getenv("USE_MOCK_DATA", "true").lower() == "true"
 
-DB_CONFIG = {'user': 'root', 'password': 'password', 'host': 'localhost', 'database': 'airportdb'}
-VALKEY_CONFIG = {'host': 'localhost', 'port': 6379, 'decode_responses': True}
+DB_CONFIG = {
+    'user': os.getenv("DB_USER", "root"),
+    'password': os.getenv("DB_PASSWORD", "password"),
+    'host': os.getenv("DB_HOST", "localhost"),
+    'database': os.getenv("DB_NAME", "airportdb")
+}
+
+VALKEY_CONFIG = {
+    'host': os.getenv("CACHE_HOST", "localhost"),
+    'port': int(os.getenv("CACHE_PORT", "6379")),
+    'decode_responses': True
+}
 
 # --- CONNECTIVITY ---
 def get_db_connection():

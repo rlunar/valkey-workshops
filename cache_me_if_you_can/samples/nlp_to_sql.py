@@ -1,6 +1,6 @@
 """
 Natural Language to SQL Query Generator
-Uses TinyLlama via Ollama with knowledge base context
+Uses Ollama with knowledge base context
 """
 
 import json
@@ -9,12 +9,22 @@ from pathlib import Path
 import requests
 import sys
 import time
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 
 class NLPToSQL:
-    def __init__(self, knowledge_base_path: str = "../knowledge_base", model: str = "tinyllama"):
+    def __init__(self, knowledge_base_path: str = None, model: str = None):
+        # Use environment variables with fallbacks
+        if knowledge_base_path is None:
+            knowledge_base_path = os.getenv("KNOWLEDGE_BASE_PATH", "../knowledge_base")
+        if model is None:
+            model = os.getenv("OLLAMA_MODEL", "codellama")
+        
         self.kb_path = Path(knowledge_base_path)
-        self.ollama_url = "http://localhost:11434/api/generate"
+        self.ollama_url = os.getenv("OLLAMA_URL", "http://localhost:11434/api/generate")
         self.model = model
         self.context = self._load_knowledge_base()
         print(f"Loaded knowledge base from: {self.kb_path.absolute()}")

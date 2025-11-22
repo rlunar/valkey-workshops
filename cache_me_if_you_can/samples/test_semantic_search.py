@@ -5,7 +5,12 @@ Tests embedding generation and similarity calculation without full system
 """
 
 import sys
+import os
 from pathlib import Path
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 print("Testing Semantic Search Components...")
 print("=" * 60)

@@ -13,6 +13,10 @@ import sys
 import os
 from pathlib import Path
 from tabulate import tabulate
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # Add parent directory to path to import cache_aside
 sys.path.insert(0, str(Path(__file__).parent.parent))
