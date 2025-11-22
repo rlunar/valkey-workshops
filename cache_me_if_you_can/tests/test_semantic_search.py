@@ -96,7 +96,13 @@ try:
         import valkey
     except ImportError:
         import redis as valkey
-    r = valkey.Valkey(host='localhost', port=6379, decode_responses=True)
+    
+    # Use environment variables with fallbacks
+    valkey_host = os.getenv("VECTOR_HOST", "localhost")
+    valkey_port = int(os.getenv("VECTOR_PORT", "6379"))
+    
+    print(f"   Connecting to {valkey_host}:{valkey_port}...")
+    r = valkey.Valkey(host=valkey_host, port=valkey_port, decode_responses=True)
     r.ping()
     print("   ✅ Valkey connection successful")
 except Exception as e:
@@ -107,6 +113,6 @@ except Exception as e:
 print("\n" + "=" * 60)
 print("✅ All core components working!")
 print("\nYou can now run:")
-print("  uv run python samples/semantic_search.py --model codellama")
+print("  uv run python samples/demo_semantic_search.py --model codellama")
 print("\nNote: First run with Ollama will download the model")
 print("=" * 60)

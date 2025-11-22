@@ -25,9 +25,11 @@ except ImportError:
 # Import embedding model
 from sentence_transformers import SentenceTransformer
 
+# Add parent directory to path to import from daos
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 # Import the NLP to SQL converter
-sys.path.append(str(Path(__file__).parent))
-from nlp_to_sql import NLPToSQL
+from daos.nlp_to_sql import NLPToSQL
 
 
 class SemanticSQLCache:

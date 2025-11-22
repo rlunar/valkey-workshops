@@ -71,7 +71,7 @@ FAILED_DEMOS=0
 
 # Demo 1: Cache-Aside Pattern
 TOTAL_DEMOS=$((TOTAL_DEMOS + 1))
-if run_demo "Cache-Aside Pattern Demo" "cache_aside_demo.py"; then
+if run_demo "Cache-Aside Pattern Demo" "demo_cache_aside.py"; then
     SUCCESSFUL_DEMOS=$((SUCCESSFUL_DEMOS + 1))
 else
     FAILED_DEMOS=$((FAILED_DEMOS + 1))
@@ -80,7 +80,7 @@ prompt_continue
 
 # Demo 2: Write-Through Cache Pattern
 TOTAL_DEMOS=$((TOTAL_DEMOS + 1))
-if run_demo "Write-Through Cache Pattern Demo" "write_through_cache_demo.py"; then
+if run_demo "Write-Through Cache Pattern Demo" "demo_write_through_cache.py"; then
     SUCCESSFUL_DEMOS=$((SUCCESSFUL_DEMOS + 1))
 else
     FAILED_DEMOS=$((FAILED_DEMOS + 1))
@@ -89,7 +89,7 @@ prompt_continue
 
 # Demo 3: Weather API Cache
 TOTAL_DEMOS=$((TOTAL_DEMOS + 1))
-if run_demo "Weather API Cache Demo" "weather_api_cache.py"; then
+if run_demo "Weather API Cache Demo" "demo_weather_api_cache.py"; then
     SUCCESSFUL_DEMOS=$((SUCCESSFUL_DEMOS + 1))
 else
     FAILED_DEMOS=$((FAILED_DEMOS + 1))
@@ -99,7 +99,7 @@ prompt_continue
 # Demo 4: Semantic Search
 TOTAL_DEMOS=$((TOTAL_DEMOS + 1))
 echo -e "${YELLOW}Note: Semantic Search demo requires embeddings to be generated first${NC}"
-if run_demo "Semantic Search Demo" "semantic_search.py"; then
+if run_demo "Semantic Search Demo" "demo_semantic_search.py"; then
     SUCCESSFUL_DEMOS=$((SUCCESSFUL_DEMOS + 1))
 else
     FAILED_DEMOS=$((FAILED_DEMOS + 1))
@@ -109,7 +109,7 @@ prompt_continue
 # Demo 5: NLP to SQL
 # TOTAL_DEMOS=$((TOTAL_DEMOS + 1))
 # echo -e "${YELLOW}Note: NLP to SQL demo requires Ollama to be running${NC}"
-# if run_demo "NLP to SQL Demo" "nlp_to_sql.py"; then
+# if run_demo "NLP to SQL Demo" "demo_nlp_to_sql.py"; then
 #     SUCCESSFUL_DEMOS=$((SUCCESSFUL_DEMOS + 1))
 # else
 #     FAILED_DEMOS=$((FAILED_DEMOS + 1))
@@ -119,7 +119,7 @@ prompt_continue
 # Demo 6: Multi-threaded Performance Test
 TOTAL_DEMOS=$((TOTAL_DEMOS + 1))
 echo -e "${YELLOW}Running performance test with default settings (4 users, 10 queries)${NC}"
-if run_demo "Multi-threaded Performance Test" "multi_threaded_performance_test.py" "--users 4 --queries 10"; then
+if run_demo "Multi-threaded Performance Test" "demo_multi_threaded_performance.py" "--users 4 --queries 10"; then
     SUCCESSFUL_DEMOS=$((SUCCESSFUL_DEMOS + 1))
 else
     FAILED_DEMOS=$((FAILED_DEMOS + 1))
