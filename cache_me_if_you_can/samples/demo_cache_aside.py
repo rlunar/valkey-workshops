@@ -602,6 +602,12 @@ def run(
         "--verbose",
         "-v",
         help="Show SQL queries and cache keys"
+    ),
+    flush: bool = typer.Option(
+        False,
+        "--flush",
+        "-f",
+        help="Flush cache before running demo"
     )
 ):
     """Run the cache-aside pattern demonstration"""
@@ -633,6 +639,15 @@ def run(
         progress.update(task, completed=True)
     
     console.print("[green]✓[/green] Connected to database and cache\n")
+    
+    # Flush cache if requested
+    if flush:
+        console.print("[yellow]🧹 Flushing cache...[/yellow]")
+        try:
+            cache.cache.flush_all()
+            console.print("[green]✓[/green] Cache flushed successfully\n")
+        except Exception as e:
+            console.print(f"[red]❌ Error flushing cache: {e}[/red]\n")
     
     # Track all query statistics
     stats = []
