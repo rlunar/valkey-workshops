@@ -82,6 +82,7 @@ The app will open at http://localhost:8501
 - Cache vs database latency comparison
 - Cache hit rate statistics
 - Random passenger selection
+- Multi-database support (MySQL, MariaDB, PostgreSQL)
 
 ### Demo Scripts
 

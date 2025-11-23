@@ -1,28 +1,21 @@
 import streamlit as st
-import mysql.connector
 import time
 import json
 import pandas as pd
 import plotly.express as px
 import os
 from dotenv import load_dotenv
-from core import get_cache_client
+from sqlalchemy import text
+from core import get_cache_client, get_db_engine
 
 # Load environment variables
 load_dotenv()
 
-# --- CONFIGURATION ---
-DB_CONFIG = {
-    'user': os.getenv("DB_USER", "root"),
-    'password': os.getenv("DB_PASSWORD", "password"),
-    'host': os.getenv("DB_HOST", "localhost"),
-    'database': os.getenv("DB_NAME", "flughafendb_large")
-}
-
 # --- CONNECTIVITY ---
+@st.cache_resource
 def get_db_connection():
-    """Get MySQL database connection"""
-    return mysql.connector.connect(**DB_CONFIG)
+    """Get database engine (supports MySQL, MariaDB, PostgreSQL)"""
+    return get_db_engine()
 
 def get_cache_connection():
     """Get Valkey/Redis cache connection"""
@@ -33,28 +26,34 @@ def fetch_flight_db(flight_id):
     """Fetch flight details from database"""
     start = time.time()
     
-    conn = get_db_connection()
-    cursor = conn.cursor(dictionary=True)
+    engine = get_db_connection()
     
-    query = """
+    query = text("""
         SELECT 
             f.flight_id,
             a.airlinename as airline,
-            af.iata as `from`,
-            at.iata as `to`,
+            af.iata as from_airport,
+            at.iata as to_airport,
             f.departure,
             f.arrival,
             'On Time' as status
         FROM flight f
         JOIN airline a ON f.airline_id = a.airline_id
-        JOIN airport af ON f.`from` = af.airport_id
-        JOIN airport at ON f.`to` = at.airport_id
-        WHERE f.flight_id = %s
-    """
+        JOIN airport af ON f.from = af.airport_id
+        JOIN airport at ON f.to = at.airport_id
+        WHERE f.flight_id = :flight_id
+    """)
     
-    cursor.execute(query, (flight_id,))
-    data = cursor.fetchone()
-    conn.close()
+    with engine.connect() as conn:
+        result = conn.execute(query, {"flight_id": flight_id})
+        row = result.fetchone()
+        if row:
+            data = dict(row._mapping)
+            # Rename for backward compatibility
+            data['from'] = data.pop('from_airport')
+            data['to'] = data.pop('to_airport')
+        else:
+            data = None
     
     return data, (time.time() - start) * 1000
 
@@ -63,11 +62,10 @@ def fetch_manifest_db(flight_id):
     """Fetch flight manifest with passenger details (heavy JOIN operation)"""
     start = time.time()
     
-    conn = get_db_connection()
-    cursor = conn.cursor(dictionary=True)
+    engine = get_db_connection()
     
     # Heavy 3-table JOIN: Booking -> Passenger -> PassengerDetails
-    query = """
+    query = text("""
         SELECT 
             b.seat,
             p.firstname,
@@ -78,13 +76,13 @@ def fetch_manifest_db(flight_id):
         FROM booking b
         JOIN passenger p ON b.passenger_id = p.passenger_id
         LEFT JOIN passengerdetails pd ON p.passenger_id = pd.passenger_id
-        WHERE b.flight_id = %s
+        WHERE b.flight_id = :flight_id
         ORDER BY b.seat ASC
-    """
+    """)
     
-    cursor.execute(query, (flight_id,))
-    data = cursor.fetchall()
-    conn.close()
+    with engine.connect() as conn:
+        result = conn.execute(query, {"flight_id": flight_id})
+        data = [dict(row._mapping) for row in result]
     
     return data, (time.time() - start) * 1000
 
@@ -93,11 +91,10 @@ def fetch_passenger_flights_db(passport_no):
     """Fetch all flights for a passenger (complex multi-table JOIN)"""
     start = time.time()
     
-    conn = get_db_connection()
-    cursor = conn.cursor(dictionary=True)
+    engine = get_db_connection()
     
     # Complex 8-table JOIN query
-    query = """
+    query = text("""
         SELECT 
             b.booking_id,
             b.seat,
@@ -118,20 +115,20 @@ def fetch_passenger_flights_db(passport_no):
             p.passportno
         FROM booking b
         JOIN flight f ON b.flight_id = f.flight_id
-        JOIN airport dep_airport ON f.`from` = dep_airport.airport_id
-        JOIN airport arr_airport ON f.`to` = arr_airport.airport_id
+        JOIN airport dep_airport ON f.from = dep_airport.airport_id
+        JOIN airport arr_airport ON f.to = arr_airport.airport_id
         JOIN airline al ON f.airline_id = al.airline_id
         JOIN airplane ap ON f.airplane_id = ap.airplane_id
         JOIN airplane_type at ON ap.type_id = at.type_id
         JOIN passenger p ON b.passenger_id = p.passenger_id
-        WHERE p.passportno = %s
+        WHERE p.passportno = :passport_no
         ORDER BY f.departure DESC
         LIMIT 10
-    """
+    """)
     
-    cursor.execute(query, (passport_no,))
-    data = cursor.fetchall()
-    conn.close()
+    with engine.connect() as conn:
+        result = conn.execute(query, {"passport_no": passport_no})
+        data = [dict(row._mapping) for row in result]
     
     return data, (time.time() - start) * 1000
 
@@ -141,21 +138,20 @@ def get_random_passengers():
     """Get 10 random passengers (simplified approach)"""
     import random
     
-    conn = get_db_connection()
-    cursor = conn.cursor(dictionary=True)
+    engine = get_db_connection()
     
     # Get min and max passenger IDs
-    cursor.execute("SELECT MIN(passenger_id) as min_id, MAX(passenger_id) as max_id FROM passenger")
-    result = cursor.fetchone()
-    min_id = result['min_id']
-    max_id = result['max_id']
+    with engine.connect() as conn:
+        result = conn.execute(text("SELECT MIN(passenger_id) as min_id, MAX(passenger_id) as max_id FROM passenger"))
+        row = result.fetchone()
+        min_id = row.min_id
+        max_id = row.max_id
     
     # Generate 10 random passenger IDs in the range
     random_ids = random.sample(range(min_id, max_id + 1), min(10, max_id - min_id + 1))
     
     # Get passenger details for those IDs
-    placeholders = ','.join(['%s'] * len(random_ids))
-    query = f"""
+    query = text("""
         SELECT 
             p.passenger_id,
             p.passportno,
@@ -164,16 +160,16 @@ def get_random_passengers():
             COUNT(b.booking_id) as booking_count
         FROM passenger p
         LEFT JOIN booking b ON p.passenger_id = b.passenger_id
-        WHERE p.passenger_id IN ({placeholders})
+        WHERE p.passenger_id IN :passenger_ids
           AND p.passportno IS NOT NULL
         GROUP BY p.passenger_id, p.passportno, p.firstname, p.lastname
-        HAVING booking_count > 0
+        HAVING COUNT(b.booking_id) > 0
         LIMIT 10
-    """
+    """)
     
-    cursor.execute(query, random_ids)
-    data = cursor.fetchall()
-    conn.close()
+    with engine.connect() as conn:
+        result = conn.execute(query, {"passenger_ids": tuple(random_ids)})
+        data = [dict(row._mapping) for row in result]
     
     return data
 
