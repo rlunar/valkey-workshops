@@ -389,12 +389,12 @@ def demo_cache_invalidation(cache: CacheAside):
     print("\n🔍 Testing cache invalidation")
     
     # First execution
-    print("\n   1. First execution (CACHE_MISS ❌):")
+    print("\n   1. First execution (CACHE_MISS) ❌:")
     results, source, latency = cache.execute_query(query)
     print_query_result("      ", results, source, latency)
     
     # Second execution (cached)
-    print("\n   2. Second execution (CACHE_HIT ✅):")
+    print("\n   2. Second execution (CACHE_HIT) ✅:")
     results, source, latency = cache.execute_query(query)
     print_query_result("      ", results, source, latency)
     
@@ -404,7 +404,7 @@ def demo_cache_invalidation(cache: CacheAside):
     print(f"      Cache invalidated: {invalidated}")
     
     # Third execution (cache miss after invalidation)
-    print("\n   4. After invalidation (CACHE_MISS ❌):")
+    print("\n   4. After invalidation (CACHE_MISS) ❌:")
     results, source, latency = cache.execute_query(query)
     print_query_result("      ", results, source, latency)
 
@@ -516,42 +516,75 @@ def demo_summary_statistics(stats: list):
     """Show summary statistics from all demo queries"""
     print_section("DEMO QUERIES PERFORMANCE SUMMARY")
     
-    print("\n📈 Performance metrics from all executed queries:\n")
+    console.print("\n📈 Performance metrics from all executed queries:\n")
     
     # Calculate statistics
     cache_misses = [s for s in stats if s['source'] == 'CACHE_MISS']
     cache_hits = [s for s in stats if s['source'] == 'CACHE_HIT']
     
     if cache_misses and cache_hits:
+        # DB (Cache Miss) statistics
+        min_miss_latency = min(s['latency'] for s in cache_misses)
         avg_miss_latency = sum(s['latency'] for s in cache_misses) / len(cache_misses)
-        avg_hit_latency = sum(s['latency'] for s in cache_hits) / len(cache_hits)
         max_miss_latency = max(s['latency'] for s in cache_misses)
+        
+        # Cache (Cache Hit) statistics
         min_hit_latency = min(s['latency'] for s in cache_hits)
+        avg_hit_latency = sum(s['latency'] for s in cache_hits) / len(cache_hits)
+        max_hit_latency = max(s['latency'] for s in cache_hits)
         
-        summary_data = [
-            ["Total Queries", len(stats)],
-            ["Cache Misses (DB)", len(cache_misses)],
-            ["Cache Hits", len(cache_hits)],
-            ["", ""],
-            ["Avg DB Latency", f"{avg_miss_latency:.3f} ms"],
-            ["Avg Cache Latency", f"{avg_hit_latency:.3f} ms"],
-            ["Max DB Latency", f"{max_miss_latency:.3f} ms"],
-            ["Min Cache Latency", f"{min_hit_latency:.3f} ms"],
-            ["", ""],
-            ["Avg Speedup", f"{avg_miss_latency / avg_hit_latency:.2f}x faster"],
-            ["Best Speedup", f"{max_miss_latency / min_hit_latency:.2f}x faster"],
-        ]
+        # Create two-column table for DB vs Cache comparison
+        table = Table(title="📈 Performance Metrics", box=box.ROUNDED, show_lines=True)
+        table.add_column("Metric", style="cyan bold", no_wrap=True)
+        table.add_column("Database (Cache Miss)", style="yellow", justify="right")
+        table.add_column("Cache (Cache Hit)", style="green", justify="right")
+        table.add_column("Speedup", style="magenta bold", justify="right")
         
-        # Create rich table for summary
-        table = Table(title="📈 Performance Metrics", box=box.SIMPLE, show_header=False)
-        table.add_column("Metric", style="cyan")
-        table.add_column("Value", style="yellow", justify="right")
+        # Query counts
+        table.add_row(
+            "Total Queries",
+            str(len(cache_misses)),
+            str(len(cache_hits)),
+            ""
+        )
         
-        for row in summary_data:
-            if row[0] == "":
-                table.add_row("", "")  # Empty row for spacing
-            else:
-                table.add_row(row[0], str(row[1]))
+        # Add separator
+        table.add_row("", "", "", "")
+        
+        # Min latency
+        table.add_row(
+            "Min Latency",
+            f"{min_miss_latency:.3f} ms",
+            f"{min_hit_latency:.3f} ms",
+            f"{min_miss_latency / min_hit_latency:.2f}x"
+        )
+        
+        # Avg latency
+        table.add_row(
+            "Avg Latency",
+            f"{avg_miss_latency:.3f} ms",
+            f"{avg_hit_latency:.3f} ms",
+            f"{avg_miss_latency / avg_hit_latency:.2f}x"
+        )
+        
+        # Max latency
+        table.add_row(
+            "Max Latency",
+            f"{max_miss_latency:.3f} ms",
+            f"{max_hit_latency:.3f} ms",
+            f"{max_miss_latency / max_hit_latency:.2f}x"
+        )
+        
+        # Add separator
+        table.add_row("", "", "", "")
+        
+        # Best case speedup
+        table.add_row(
+            "Best Case",
+            f"{max_miss_latency:.3f} ms",
+            f"{min_hit_latency:.3f} ms",
+            f"[bold]{max_miss_latency / min_hit_latency:.2f}x faster[/bold]"
+        )
         
         console.print(table)
 
