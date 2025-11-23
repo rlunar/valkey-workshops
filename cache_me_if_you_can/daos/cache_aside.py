@@ -8,10 +8,10 @@ cache engines (Redis, Valkey, Memcached) via environment variables.
 import os
 import hashlib
 import json
-from typing import Any, Optional, Tuple
+from typing import Optional, Tuple
 from dotenv import load_dotenv
-from sqlalchemy import create_engine, text
-from sqlalchemy.engine import Engine
+from sqlalchemy import text
+from core import get_db_engine, get_cache_client
 
 # Load environment variables
 load_dotenv()
@@ -22,81 +22,14 @@ class CacheAside:
     
     def __init__(self):
         """Initialize database and cache connections from environment variables."""
-        self.db_engine = self._create_db_engine()
-        self.cache_client = self._create_cache_client()
+        self.db_engine = get_db_engine()
+        self.cache = get_cache_client()
         self.default_ttl = int(os.getenv("CACHE_TTL", "3600"))  # 1 hour default
-    
-    def _create_db_engine(self) -> Engine:
-        """Create SQLAlchemy engine based on DB_ENGINE environment variable."""
-        db_type = os.getenv("DB_ENGINE", "mysql").lower()
-        db_host = os.getenv("DB_HOST", "localhost")
-        db_port = os.getenv("DB_PORT", "3306")
-        db_user = os.getenv("DB_USER", "root")
-        db_password = os.getenv("DB_PASSWORD", "")
-        db_name = os.getenv("DB_NAME", "flughafendb_large")
-        
-        # Build connection string based on engine type
-        if db_type in ["mysql", "mariadb"]:
-            connection_string = f"mysql+pymysql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
-        elif db_type == "postgresql":
-            connection_string = f"postgresql+psycopg2://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
-        else:
-            raise ValueError(f"Unsupported DB_ENGINE: {db_type}")
-        
-        return create_engine(connection_string)
-    
-    def _create_cache_client(self) -> Any:
-        """Create cache client based on CACHE_ENGINE environment variable."""
-        cache_type = os.getenv("CACHE_ENGINE", "redis").lower()
-        cache_host = os.getenv("CACHE_HOST", "localhost")
-        cache_port = int(os.getenv("CACHE_PORT", "6379"))
-        
-        if cache_type in ["redis", "valkey"]:
-            try:
-                import valkey
-            except ImportError:
-                import redis as valkey
-            return valkey.Redis(
-                host=cache_host,
-                port=cache_port,
-                decode_responses=True
-            )
-        elif cache_type == "memcached":
-            from pymemcache.client import base
-            return base.Client((cache_host, cache_port))
-        else:
-            raise ValueError(f"Unsupported CACHE_ENGINE: {cache_type}")
     
     def _generate_cache_key(self, query: str) -> str:
         """Generate cache key from SQL query using SHA256 hash."""
         query_hash = hashlib.sha256(query.encode()).hexdigest()
         return f"query:{query_hash}"
-    
-    def _cache_get(self, key: str) -> Optional[str]:
-        """Get value from cache (handles different cache backends)."""
-        cache_type = os.getenv("CACHE_ENGINE", "redis").lower()
-        
-        try:
-            if cache_type in ["redis", "valkey"]:
-                return self.cache_client.get(key)
-            elif cache_type == "memcached":
-                value = self.cache_client.get(key)
-                return value.decode() if value else None
-        except Exception as e:
-            print(f"Cache GET error: {e}")
-            return None
-    
-    def _cache_set(self, key: str, value: str, ttl: int) -> None:
-        """Set value in cache with TTL (handles different cache backends)."""
-        cache_type = os.getenv("CACHE_ENGINE", "redis").lower()
-        
-        try:
-            if cache_type in ["redis", "valkey"]:
-                self.cache_client.setex(key, ttl, value)
-            elif cache_type == "memcached":
-                self.cache_client.set(key, value.encode(), expire=ttl)
-        except Exception as e:
-            print(f"Cache SET error: {e}")
     
     def execute_query(
         self, 
@@ -128,7 +61,7 @@ class CacheAside:
         # 1. Try cache first (unless force refresh)
         if not force_refresh:
             start = time.time()
-            cached_data = self._cache_get(cache_key)
+            cached_data = self.cache.get(cache_key)
             latency = (time.time() - start) * 1000
             
             if cached_data:
@@ -145,7 +78,7 @@ class CacheAside:
         
         # 3. Store in cache
         if results:
-            self._cache_set(cache_key, json.dumps(results, default=str), ttl)
+            self.cache.set(cache_key, json.dumps(results, default=str), ttl)
         
         return results, "CACHE_MISS", latency
     
@@ -160,26 +93,12 @@ class CacheAside:
             True if cache entry was deleted, False otherwise
         """
         cache_key = self._generate_cache_key(query)
-        cache_type = os.getenv("CACHE_ENGINE", "redis").lower()
-        
-        try:
-            if cache_type in ["redis", "valkey"]:
-                return bool(self.cache_client.delete(cache_key))
-            elif cache_type == "memcached":
-                return self.cache_client.delete(cache_key)
-        except Exception as e:
-            print(f"Cache invalidation error: {e}")
-            return False
+        return self.cache.delete(cache_key)
     
     def close(self):
         """Close database and cache connections."""
         self.db_engine.dispose()
-        
-        cache_type = os.getenv("CACHE_ENGINE", "redis").lower()
-        if cache_type in ["redis", "valkey"]:
-            self.cache_client.close()
-        elif cache_type == "memcached":
-            self.cache_client.close()
+        self.cache.close()
 
 
 # Example usage
@@ -203,21 +122,21 @@ if __name__ == "__main__":
     print("=" * 60)
     
     # First execution (cache miss)
-    print("\n1. First execution (should be CACHE_MISS):")
+    print("\n1. First execution (should be CACHE_MISS ❌):")
     results, source, latency = cache.execute_query(query)
     print(f"   Source: {source}")
     print(f"   Latency: {latency:.2f} ms")
     print(f"   Results: {results}")
     
     # Second execution (cache hit)
-    print("\n2. Second execution (should be CACHE_HIT):")
+    print("\n2. Second execution (should be CACHE_HIT ✅):")
     results, source, latency = cache.execute_query(query)
     print(f"   Source: {source}")
     print(f"   Latency: {latency:.2f} ms")
     print(f"   Results: {results}")
     
     # Force refresh
-    print("\n3. Force refresh (bypasses cache):")
+    print("\n3. Force refresh (bypasses cache ⏭️):")
     results, source, latency = cache.execute_query(query, force_refresh=True)
     print(f"   Source: {source}")
     print(f"   Latency: {latency:.2f} ms")
@@ -228,7 +147,7 @@ if __name__ == "__main__":
     print(f"   Cache invalidated: {invalidated}")
     
     # Query after invalidation
-    print("\n5. Query after invalidation (should be CACHE_MISS):")
+    print("\n5. Query after invalidation (should be CACHE_MISS ❌):")
     results, source, latency = cache.execute_query(query)
     print(f"   Source: {source}")
     print(f"   Latency: {latency:.2f} ms")

@@ -33,33 +33,26 @@ class SimpleCache:
         Args:
             default_ttl: Default time-to-live in seconds (default: 900 = 15 minutes)
         """
-        try:
-            import valkey
-        except ImportError:
-            import redis as valkey
+        # Import from core module
+        sys.path.insert(0, str(Path(__file__).parent.parent))
+        from core import get_cache_client
         
         self.default_ttl = default_ttl
-        cache_host = os.getenv("CACHE_HOST", "localhost")
-        cache_port = int(os.getenv("CACHE_PORT", "6379"))
-        
-        self.client = valkey.Valkey(
-            host=cache_host,
-            port=cache_port,
-            decode_responses=True
-        )
+        self.cache = get_cache_client()
+        self.client = self.cache.client  # For backward compatibility with ping()
         
         # Test connection
         try:
             self.client.ping()
-            print(f"✓ Connected to Valkey at {cache_host}:{cache_port}")
-        except valkey.ConnectionError as e:
-            print(f"✗ Failed to connect to Valkey at {cache_host}:{cache_port}")
+            print(f"✓ Connected to Valkey at {self.cache.host}:{self.cache.port}")
+        except Exception as e:
+            print(f"✗ Failed to connect to Valkey at {self.cache.host}:{self.cache.port}")
             raise e
     
     def get(self, key: str) -> Optional[Any]:
         """Get value from cache."""
         try:
-            value = self.client.get(key)
+            value = self.cache.get(key)
             if value:
                 return json.loads(value)
             return None
@@ -74,7 +67,7 @@ class SimpleCache:
         
         try:
             serialized_value = json.dumps(value, default=str)
-            self.client.setex(key, ttl, serialized_value)
+            self.cache.set(key, serialized_value, ttl)
         except Exception as e:
             print(f"Cache SET error for key '{key}': {e}")
     
@@ -128,7 +121,7 @@ class SimpleCache:
     def close(self) -> None:
         """Close Valkey connection."""
         try:
-            self.client.close()
+            self.cache.close()
         except Exception as e:
             print(f"Cache CLOSE error: {e}")
 

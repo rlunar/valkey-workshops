@@ -12,14 +12,18 @@ This demo shows:
 """
 
 import os
-import hashlib
+import sys
 import json
-import time
+from pathlib import Path
 from datetime import datetime, timedelta
-from typing import Any, Optional, Dict
+from typing import Optional, Dict
 from dotenv import load_dotenv
-from sqlalchemy import create_engine, text
-from sqlalchemy.engine import Engine
+from sqlalchemy import text
+
+# Add parent directory to path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from core import get_db_engine, get_cache_client
 
 # Load environment variables
 load_dotenv()
@@ -30,92 +34,13 @@ class WriteThroughCache:
     
     def __init__(self):
         """Initialize database and cache connections."""
-        self.db_engine = self._create_db_engine()
-        self.cache_client = self._create_cache_client()
+        self.db_engine = get_db_engine()
+        self.cache = get_cache_client()
         self.default_ttl = int(os.getenv("CACHE_TTL", "3600"))
-    
-    def _create_db_engine(self) -> Engine:
-        """Create SQLAlchemy engine based on environment variables."""
-        db_type = os.getenv("DB_ENGINE", "mysql").lower()
-        db_host = os.getenv("DB_HOST", "localhost")
-        db_port = os.getenv("DB_PORT", "3306")
-        db_user = os.getenv("DB_USER", "root")
-        db_password = os.getenv("DB_PASSWORD", "")
-        db_name = os.getenv("DB_NAME", "flughafendb_large")
-        
-        if db_type in ["mysql", "mariadb"]:
-            connection_string = f"mysql+pymysql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
-        elif db_type == "postgresql":
-            connection_string = f"postgresql+psycopg2://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
-        else:
-            raise ValueError(f"Unsupported DB_ENGINE: {db_type}")
-        
-        return create_engine(connection_string)
-    
-    def _create_cache_client(self) -> Any:
-        """Create cache client based on environment variables."""
-        cache_type = os.getenv("CACHE_ENGINE", "valkey").lower()
-        cache_host = os.getenv("CACHE_HOST", "localhost")
-        cache_port = int(os.getenv("CACHE_PORT", "6379"))
-        
-        if cache_type in ["redis", "valkey"]:
-            try:
-                import valkey
-            except ImportError:
-                import redis as valkey
-            return valkey.Redis(
-                host=cache_host,
-                port=cache_port,
-                decode_responses=True
-            )
-        elif cache_type == "memcached":
-            from pymemcache.client import base
-            return base.Client((cache_host, cache_port))
-        else:
-            raise ValueError(f"Unsupported CACHE_ENGINE: {cache_type}")
     
     def _generate_cache_key(self, entity_type: str, entity_id: int) -> str:
         """Generate cache key for entity."""
         return f"{entity_type}:{entity_id}"
-    
-    def _cache_get(self, key: str) -> Optional[str]:
-        """Get value from cache."""
-        cache_type = os.getenv("CACHE_ENGINE", "valkey").lower()
-        
-        try:
-            if cache_type in ["redis", "valkey"]:
-                return self.cache_client.get(key)
-            elif cache_type == "memcached":
-                value = self.cache_client.get(key)
-                return value.decode() if value else None
-        except Exception as e:
-            print(f"Cache GET error: {e}")
-            return None
-    
-    def _cache_set(self, key: str, value: str, ttl: int) -> None:
-        """Set value in cache with TTL."""
-        cache_type = os.getenv("CACHE_ENGINE", "valkey").lower()
-        
-        try:
-            if cache_type in ["redis", "valkey"]:
-                self.cache_client.setex(key, ttl, value)
-            elif cache_type == "memcached":
-                self.cache_client.set(key, value.encode(), expire=ttl)
-        except Exception as e:
-            print(f"Cache SET error: {e}")
-    
-    def _cache_delete(self, key: str) -> bool:
-        """Delete value from cache."""
-        cache_type = os.getenv("CACHE_ENGINE", "valkey").lower()
-        
-        try:
-            if cache_type in ["redis", "valkey"]:
-                return bool(self.cache_client.delete(key))
-            elif cache_type == "memcached":
-                return self.cache_client.delete(key)
-        except Exception as e:
-            print(f"Cache DELETE error: {e}")
-            return False
     
     def get_flight(self, flight_id: int) -> Optional[Dict]:
         """
@@ -130,7 +55,7 @@ class WriteThroughCache:
         cache_key = self._generate_cache_key("flight", flight_id)
         
         # Try cache first
-        cached_data = self._cache_get(cache_key)
+        cached_data = self.cache.get(cache_key)
         if cached_data:
             print(f"   ✓ Cache HIT for flight {flight_id}")
             return json.loads(cached_data)
@@ -170,7 +95,7 @@ class WriteThroughCache:
                     flight_data[key] = value.isoformat()
             
             # Store in cache
-            self._cache_set(cache_key, json.dumps(flight_data), self.default_ttl)
+            self.cache.set(cache_key, json.dumps(flight_data), self.default_ttl)
             
             return flight_data
     
@@ -276,7 +201,7 @@ class WriteThroughCache:
             cache_key = self._generate_cache_key("flight", flight_id)
             
             # Delete old cache entry first to ensure fresh data
-            self._cache_delete(cache_key)
+            self.cache.delete(cache_key)
             
             # Get fresh data from database to update cache (will be cache miss)
             updated_flight = self.get_flight(flight_id)
@@ -302,7 +227,7 @@ class WriteThroughCache:
         cache_key = self._generate_cache_key("flight", flight_id)
         
         # Get from cache
-        cached_data = self._cache_get(cache_key)
+        cached_data = self.cache.get(cache_key)
         cache_flight = json.loads(cached_data) if cached_data else None
         
         # Get from database
@@ -360,12 +285,7 @@ class WriteThroughCache:
     def close(self):
         """Close database and cache connections."""
         self.db_engine.dispose()
-        
-        cache_type = os.getenv("CACHE_ENGINE", "redis").lower()
-        if cache_type in ["redis", "valkey"]:
-            self.cache_client.close()
-        elif cache_type == "memcached":
-            self.cache_client.close()
+        self.cache.close()
 
 
 def print_flight_info(flight_data: Dict, title: str):

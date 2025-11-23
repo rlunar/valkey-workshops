@@ -22,18 +22,18 @@ import os
 import time
 import string
 import argparse
+from pathlib import Path
 from datetime import datetime
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 from dotenv import load_dotenv
+
+# Add parent directory to path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from core import get_db_engine, get_cache_client
 
 # Load environment variables
 load_dotenv()
-
-# Import valkey (with fallback to redis)
-try:
-    import valkey
-except ImportError:
-    import redis as valkey
 
 
 class PerformanceTest:
@@ -78,33 +78,44 @@ class PerformanceTest:
     def _setup_connections(self):
         """Initialize database and cache connections"""
         try:
-            # Database engines
-            db_url = (f"mysql+pymysql://{self.db_params['user']}:{self.db_params['password']}"
-                     f"@{self.db_params['host']}:{self.db_params['port']}/{self.db_params['database']}")
-            
-            self.engine_rw = create_engine(db_url, pool_size=self.args.users, max_overflow=50)
-            self.engine_ro = create_engine(db_url, pool_size=self.args.users, max_overflow=50)
+            # Database engines using core module
+            self.engine_rw = get_db_engine(
+                host=self.db_params['host'],
+                port=str(self.db_params['port']),
+                user=self.db_params['user'],
+                password=self.db_params['password'],
+                database=self.db_params['database'],
+                pool_size=self.args.users,
+                max_overflow=50
+            )
+            self.engine_ro = get_db_engine(
+                host=self.db_params['host'],
+                port=str(self.db_params['port']),
+                user=self.db_params['user'],
+                password=self.db_params['password'],
+                database=self.db_params['database'],
+                pool_size=self.args.users,
+                max_overflow=50
+            )
             
             # Test connections
             self.engine_rw.connect()
             self.engine_ro.connect()
             print("✓ Connected to MySQL database")
             
-            # Valkey connections (using valkey module with redis fallback)
-            self.valkey_write = valkey.Redis(
+            # Valkey connections using core module
+            cache_write = get_cache_client(
                 host=self.db_params['valkey_host'],
-                port=self.db_params['valkey_port'],
-                ssl=self.args.ssl,
-                decode_responses=False,
-                socket_connect_timeout=5
+                port=self.db_params['valkey_port']
             )
-            self.valkey_read = valkey.Redis(
+            cache_read = get_cache_client(
                 host=self.db_params['valkey_host'],
-                port=self.db_params['valkey_port'],
-                ssl=self.args.ssl,
-                decode_responses=False,
-                socket_connect_timeout=5
+                port=self.db_params['valkey_port']
             )
+            
+            # Get underlying clients for direct access (needed for performance testing)
+            self.valkey_write = cache_write.client
+            self.valkey_read = cache_read.client
             
             # Test Valkey connection
             self.valkey_write.ping()
