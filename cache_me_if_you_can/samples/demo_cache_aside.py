@@ -12,8 +12,16 @@ Shows performance improvements from caching simple to complex queries.
 import sys
 import os
 from pathlib import Path
-from tabulate import tabulate
 from dotenv import load_dotenv
+import typer
+from rich.console import Console
+from rich.table import Table
+from rich.panel import Panel
+from rich.progress import Progress, SpinnerColumn, TextColumn
+from rich import box
+from rich.prompt import Confirm
+from tqdm import tqdm
+import time
 
 # Load environment variables
 load_dotenv()
@@ -23,27 +31,63 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from daos.cache_aside import CacheAside
 
+# Initialize typer app and rich console
+app = typer.Typer(help="Cache-Aside Pattern Demonstration")
+console = Console()
+
+# Global verbose flag
+VERBOSE = False
+
 
 def print_section(title: str):
-    """Print a formatted section header."""
-    print("\n" + "=" * 80)
-    print(f"  {title}")
-    print("=" * 80)
+    """Print a formatted section header using rich."""
+    console.print()
+    console.print(Panel(f"[bold cyan]{title}[/bold cyan]", box=box.DOUBLE))
 
 
-def print_query_result(query_name: str, results: list, source: str, latency: float, show_data: bool = True):
-    """Print query execution results in a formatted way."""
-    print(f"\n📊 {query_name}")
-    print(f"   Source: {source:12} | Latency: {latency:7.2f} ms")
+def get_cache_key(query: str) -> str:
+    """Generate cache key from query (same logic as CacheAside)."""
+    import hashlib
+    query_hash = hashlib.sha256(query.encode()).hexdigest()
+    return f"query:{query_hash}"
+
+
+def print_query_info(query: str, cache_key: str = None):
+    """Print query and cache key information in verbose mode."""
+    if VERBOSE:
+        console.print("\n[dim]─── Query Details ───[/dim]")
+        console.print(Panel(
+            f"[cyan]{query.strip()}[/cyan]",
+            title="[bold]SQL Query[/bold]",
+            border_style="dim",
+            box=box.ROUNDED
+        ))
+        if cache_key:
+            console.print(f"[dim]Cache Key:[/dim] [yellow]{cache_key}[/yellow]")
+            console.print(f"[dim]Key Hash:[/dim] [yellow]{cache_key.split(':')[1][:16]}...[/yellow]")
+
+
+def print_query_result(query_name: str, results: list, source: str, latency: float, show_data: bool = True, show_query: bool = False, query: str = None, cache_key: str = None):
+    """Print query execution results in a formatted way using rich."""
+    # Show query details if verbose and show_query is True
+    if VERBOSE and show_query and query:
+        print_query_info(query, cache_key)
+    
+    # Color code based on source
+    source_color = "green" if source == "CACHE_HIT" else "yellow"
+    icon = "✓" if source == "CACHE_HIT" else "⚡"
+    
+    console.print(f"\n{icon} [bold]{query_name}[/bold]")
+    console.print(f"   Source: [{source_color}]{source:12}[/{source_color}] | Latency: [magenta]{latency:7.2f} ms[/magenta]")
     
     if show_data and results:
-        print(f"   Results: {len(results)} row(s)")
-        if len(results) <= 5:
+        console.print(f"   Results: [cyan]{len(results)} row(s)[/cyan]")
+        if len(results) <= 5 and len(results) > 0:
             # Show all results for small datasets
-            print(f"   Data: {results[0] if len(results) == 1 else results}")
-        else:
+            console.print(f"   Data: {results[0] if len(results) == 1 else results[:2]}")
+        elif len(results) > 0:
             # Show first result for large datasets
-            print(f"   Sample: {results[0]}")
+            console.print(f"   Sample: {results[0]}")
 
 
 def demo_simple_queries(cache: CacheAside):
@@ -70,14 +114,21 @@ def demo_simple_queries(cache: CacheAside):
         WHERE p.passenger_id = 1000
     """
     
-    print("\n🔍 Query 12: Get passenger with details by ID")
-    print("   First execution (CACHE_MISS ❌ expected):")
-    results, source, latency = cache.execute_query(query_12, ttl=3600)
-    print_query_result("   Execution 1", results, source, latency)
+    cache_key_12 = get_cache_key(query_12)
     
-    print("\n   Second execution (CACHE_HIT ✅ expected):")
+    console.print("\n🔍 [bold]Query 12: Get passenger with details by ID[/bold]")
+    
+    # Show query once in verbose mode
+    if VERBOSE:
+        print_query_info(query_12, cache_key_12)
+    
+    console.print("\n   First execution (CACHE_MISS ❌ expected):")
+    results, source, latency = cache.execute_query(query_12, ttl=3600)
+    print_query_result("   Execution 1", results, source, latency, show_query=False)
+    
+    console.print("\n   Second execution (CACHE_HIT ✅ expected):")
     results, source, latency = cache.execute_query(query_12)
-    print_query_result("   Execution 2", results, source, latency)
+    print_query_result("   Execution 2", results, source, latency, show_query=False)
     
     # Query 14: Get airport with geographic details by IATA code
     query_14 = """
@@ -95,14 +146,21 @@ def demo_simple_queries(cache: CacheAside):
         WHERE a.iata = 'JFK'
     """
     
-    print("\n\n🔍 Query 14: Get airport with geographic details by IATA")
-    print("   First execution (CACHE_MISS ❌ expected):")
-    results, source, latency = cache.execute_query(query_14, ttl=7200)
-    print_query_result("   Execution 1", results, source, latency)
+    cache_key_14 = get_cache_key(query_14)
     
-    print("\n   Second execution (CACHE_HIT ✅ expected):")
+    console.print("\n\n🔍 [bold]Query 14: Get airport with geographic details by IATA[/bold]")
+    
+    # Show query once in verbose mode
+    if VERBOSE:
+        print_query_info(query_14, cache_key_14)
+    
+    console.print("\n   First execution (CACHE_MISS ❌ expected):")
+    results, source, latency = cache.execute_query(query_14, ttl=7200)
+    print_query_result("   Execution 1", results, source, latency, show_query=False)
+    
+    console.print("\n   Second execution (CACHE_HIT ✅ expected):")
     results, source, latency = cache.execute_query(query_14)
-    print_query_result("   Execution 2", results, source, latency)
+    print_query_result("   Execution 2", results, source, latency, show_query=False)
 
 
 def demo_medium_queries(cache: CacheAside):
@@ -127,16 +185,23 @@ def demo_medium_queries(cache: CacheAside):
         ORDER BY number_of_flights DESC
     """
     
-    print("\n🔍 Query 6b: All distinct flights from JFK")
-    print("   First execution (CACHE_MISS ❌ expected):")
-    results, source, latency = cache.execute_query(query_6b, ttl=1800)
-    print_query_result("   Execution 1", results, source, latency, show_data=False)
-    if results:
-        print(f"   Top 3 destinations: {results[:3]}")
+    cache_key_6b = get_cache_key(query_6b)
     
-    print("\n   Second execution (CACHE_HIT ✅ expected):")
+    console.print("\n🔍 [bold]Query 6b: All distinct flights from JFK[/bold]")
+    
+    # Show query once in verbose mode
+    if VERBOSE:
+        print_query_info(query_6b, cache_key_6b)
+    
+    console.print("\n   First execution (CACHE_MISS ❌ expected):")
+    results, source, latency = cache.execute_query(query_6b, ttl=1800)
+    print_query_result("   Execution 1", results, source, latency, show_data=False, show_query=False)
+    if results:
+        console.print(f"   Top 3 destinations: {results[:3]}")
+    
+    console.print("\n   Second execution (CACHE_HIT ✅ expected):")
     results, source, latency = cache.execute_query(query_6b)
-    print_query_result("   Execution 2", results, source, latency, show_data=False)
+    print_query_result("   Execution 2", results, source, latency, show_data=False, show_query=False)
     
     # Query 10: Find passengers by city and country
     query_10 = """
@@ -153,14 +218,21 @@ def demo_medium_queries(cache: CacheAside):
         LIMIT 15
     """
     
-    print("\n\n🔍 Query 10: Find passengers by country")
-    print("   First execution (CACHE_MISS ❌ expected):")
-    results, source, latency = cache.execute_query(query_10, ttl=1800)
-    print_query_result("   Execution 1", results, source, latency, show_data=False)
+    cache_key_10 = get_cache_key(query_10)
     
-    print("\n   Second execution (CACHE_HIT ✅ expected):")
+    console.print("\n\n🔍 [bold]Query 10: Find passengers by country[/bold]")
+    
+    # Show query once in verbose mode
+    if VERBOSE:
+        print_query_info(query_10, cache_key_10)
+    
+    console.print("\n   First execution (CACHE_MISS ❌ expected):")
+    results, source, latency = cache.execute_query(query_10, ttl=1800)
+    print_query_result("   Execution 1", results, source, latency, show_data=False, show_query=False)
+    
+    console.print("\n   Second execution (CACHE_HIT ✅ expected):")
     results, source, latency = cache.execute_query(query_10)
-    print_query_result("   Execution 2", results, source, latency, show_data=False)
+    print_query_result("   Execution 2", results, source, latency, show_data=False, show_query=False)
 
 
 def demo_advanced_queries(cache: CacheAside):
@@ -199,14 +271,21 @@ def demo_advanced_queries(cache: CacheAside):
         ORDER BY f.departure ASC
     """
     
-    print("\n🔍 Query 3: Upcoming flights for passenger with full details")
-    print("   First execution (CACHE_MISS ❌ expected):")
-    results, source, latency = cache.execute_query(query_3, ttl=300)
-    print_query_result("   Execution 1", results, source, latency, show_data=False)
+    cache_key_3 = get_cache_key(query_3)
     
-    print("\n   Second execution (CACHE_HIT ✅ expected):")
+    console.print("\n🔍 [bold]Query 3: Upcoming flights for passenger with full details[/bold]")
+    
+    # Show query once in verbose mode
+    if VERBOSE:
+        print_query_info(query_3, cache_key_3)
+    
+    console.print("\n   First execution (CACHE_MISS ❌ expected):")
+    results, source, latency = cache.execute_query(query_3, ttl=300)
+    print_query_result("   Execution 1", results, source, latency, show_data=False, show_query=False)
+    
+    console.print("\n   Second execution (CACHE_HIT ✅ expected):")
     results, source, latency = cache.execute_query(query_3)
-    print_query_result("   Execution 2", results, source, latency, show_data=False)
+    print_query_result("   Execution 2", results, source, latency, show_data=False, show_query=False)
     
     # Query 4: Flight manifest - all passengers on a specific flight
     query_4 = """
@@ -224,14 +303,21 @@ def demo_advanced_queries(cache: CacheAside):
         ORDER BY b.seat ASC
     """
     
-    print("\n\n🔍 Query 4: Flight manifest for flight 115")
-    print("   First execution (CACHE_MISS ❌ expected):")
-    results, source, latency = cache.execute_query(query_4, ttl=600)
-    print_query_result("   Execution 1", results, source, latency, show_data=False)
+    cache_key_4 = get_cache_key(query_4)
     
-    print("\n   Second execution (CACHE_HIT ✅ expected):")
+    console.print("\n\n🔍 [bold]Query 4: Flight manifest for flight 115[/bold]")
+    
+    # Show query once in verbose mode
+    if VERBOSE:
+        print_query_info(query_4, cache_key_4)
+    
+    console.print("\n   First execution (CACHE_MISS ❌ expected):")
+    results, source, latency = cache.execute_query(query_4, ttl=600)
+    print_query_result("   Execution 1", results, source, latency, show_data=False, show_query=False)
+    
+    console.print("\n   Second execution (CACHE_HIT ✅ expected):")
     results, source, latency = cache.execute_query(query_4)
-    print_query_result("   Execution 2", results, source, latency, show_data=False)
+    print_query_result("   Execution 2", results, source, latency, show_data=False, show_query=False)
     
     # Query 10: Recent bookings with passenger details and geographic information
     query_10 = """
@@ -266,14 +352,21 @@ def demo_advanced_queries(cache: CacheAside):
         LIMIT 10
     """
     
-    print("\n\n🔍 Query 10: Recent bookings with full geographic details")
-    print("   First execution (CACHE_MISS ❌ expected):")
-    results, source, latency = cache.execute_query(query_10, ttl=300)
-    print_query_result("   Execution 1", results, source, latency, show_data=False)
+    cache_key_10 = get_cache_key(query_10)
     
-    print("\n   Second execution (CACHE_HIT ✅ expected):")
+    console.print("\n\n🔍 [bold]Query 10: Recent bookings with full geographic details[/bold]")
+    
+    # Show query once in verbose mode
+    if VERBOSE:
+        print_query_info(query_10, cache_key_10)
+    
+    console.print("\n   First execution (CACHE_MISS ❌ expected):")
+    results, source, latency = cache.execute_query(query_10, ttl=300)
+    print_query_result("   Execution 1", results, source, latency, show_data=False, show_query=False)
+    
+    console.print("\n   Second execution (CACHE_HIT ✅ expected):")
     results, source, latency = cache.execute_query(query_10)
-    print_query_result("   Execution 2", results, source, latency, show_data=False)
+    print_query_result("   Execution 2", results, source, latency, show_data=False, show_query=False)
 
 
 def demo_cache_invalidation(cache: CacheAside):
@@ -401,16 +494,22 @@ def demo_performance_comparison(cache: CacheAside):
         
         comparison_data.append([
             query_type,
-            f"{db_latency:.2f} ms",
-            f"{cache_latency:.2f} ms",
-            f"{improvement:.1f}x faster"
+            f"{db_latency:.3f} ms",
+            f"{cache_latency:.3f} ms",
+            f"{improvement:.2f}x faster"
         ])
     
-    print(tabulate(
-        comparison_data,
-        headers=["Query Type", "Database", "Cache", "Improvement"],
-        tablefmt="grid"
-    ))
+    # Create rich table
+    table = Table(title="📊 Performance Comparison", box=box.ROUNDED, show_lines=True)
+    table.add_column("Query Type", style="cyan", no_wrap=True)
+    table.add_column("Database", style="yellow", justify="right")
+    table.add_column("Cache", style="green", justify="right")
+    table.add_column("Improvement", style="magenta bold", justify="right")
+    
+    for row in comparison_data:
+        table.add_row(*row)
+    
+    console.print(table)
 
 
 def demo_summary_statistics(stats: list):
@@ -434,29 +533,73 @@ def demo_summary_statistics(stats: list):
             ["Cache Misses (DB)", len(cache_misses)],
             ["Cache Hits", len(cache_hits)],
             ["", ""],
-            ["Avg DB Latency", f"{avg_miss_latency:.2f} ms"],
-            ["Avg Cache Latency", f"{avg_hit_latency:.2f} ms"],
-            ["Max DB Latency", f"{max_miss_latency:.2f} ms"],
-            ["Min Cache Latency", f"{min_hit_latency:.2f} ms"],
+            ["Avg DB Latency", f"{avg_miss_latency:.3f} ms"],
+            ["Avg Cache Latency", f"{avg_hit_latency:.3f} ms"],
+            ["Max DB Latency", f"{max_miss_latency:.3f} ms"],
+            ["Min Cache Latency", f"{min_hit_latency:.3f} ms"],
             ["", ""],
-            ["Avg Speedup", f"{avg_miss_latency / avg_hit_latency:.1f}x faster"],
-            ["Best Speedup", f"{max_miss_latency / min_hit_latency:.1f}x faster"],
+            ["Avg Speedup", f"{avg_miss_latency / avg_hit_latency:.2f}x faster"],
+            ["Best Speedup", f"{max_miss_latency / min_hit_latency:.2f}x faster"],
         ]
         
-        print(tabulate(summary_data, tablefmt="simple"))
+        # Create rich table for summary
+        table = Table(title="📈 Performance Metrics", box=box.SIMPLE, show_header=False)
+        table.add_column("Metric", style="cyan")
+        table.add_column("Value", style="yellow", justify="right")
+        
+        for row in summary_data:
+            if row[0] == "":
+                table.add_row("", "")  # Empty row for spacing
+            else:
+                table.add_row(row[0], str(row[1]))
+        
+        console.print(table)
 
 
-def main():
-    """Run all demos"""
-    print("\n" + "🚀" * 40)
-    print("  CACHE-ASIDE PATTERN DEMONSTRATION")
-    print("  Airport Database Query Performance with Caching")
-    print("🚀" * 40)
+@app.command()
+def run(
+    interactive: bool = typer.Option(
+        False,
+        "--interactive",
+        "-i",
+        help="Run demo step-by-step with prompts"
+    ),
+    verbose: bool = typer.Option(
+        False,
+        "--verbose",
+        "-v",
+        help="Show SQL queries and cache keys"
+    )
+):
+    """Run the cache-aside pattern demonstration"""
     
-    # Initialize cache
-    print("\n📡 Initializing cache-aside handler...")
-    cache = CacheAside()
-    print("   ✓ Connected to database and cache")
+    # Set global verbose flag
+    global VERBOSE
+    VERBOSE = verbose
+    
+    if VERBOSE:
+        console.print("[dim]Verbose mode enabled - showing SQL queries and cache keys[/dim]\n")
+    
+    # Print header
+    console.print()
+    console.print(Panel.fit(
+        "[bold cyan]CACHE-ASIDE PATTERN DEMONSTRATION[/bold cyan]\n"
+        "[yellow]Airport Database Query Performance with Caching[/yellow]",
+        border_style="cyan",
+        box=box.DOUBLE
+    ))
+    
+    # Initialize cache with progress indicator
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console
+    ) as progress:
+        task = progress.add_task("[cyan]Initializing cache-aside handler...", total=None)
+        cache = CacheAside()
+        progress.update(task, completed=True)
+    
+    console.print("[green]✓[/green] Connected to database and cache\n")
     
     # Track all query statistics
     stats = []
@@ -469,36 +612,63 @@ def main():
         return results, source, latency
     cache.execute_query = tracked_execute
     
+    # Define demo steps
+    demo_steps = [
+        ("Simple Queries", lambda: demo_simple_queries(cache)),
+        ("Medium Queries", lambda: demo_medium_queries(cache)),
+        ("Advanced Queries", lambda: demo_advanced_queries(cache)),
+        ("Cache Invalidation", lambda: demo_cache_invalidation(cache)),
+        ("Summary Statistics", lambda: demo_summary_statistics(stats)),
+        ("Performance Comparison", lambda: demo_performance_comparison(cache)),
+    ]
+    
     try:
-        # Run demos
-        demo_simple_queries(cache)
-        demo_medium_queries(cache)
-        demo_advanced_queries(cache)
-        demo_cache_invalidation(cache)
-        demo_summary_statistics(stats)
-        demo_performance_comparison(cache)
+        if interactive:
+            # Interactive mode - run step by step
+            console.print("[bold yellow]Interactive Mode:[/bold yellow] Press Enter to continue after each step\n")
+            
+            for step_name, step_func in demo_steps:
+                console.print(f"[bold]→ Next: {step_name}[/bold]")
+                if not Confirm.ask("Continue?", default=True):
+                    console.print("[yellow]Skipping...[/yellow]")
+                    continue
+                
+                step_func()
+                console.print()
+        else:
+            # Automatic mode - run all steps with progress bar
+            console.print("[bold green]Automatic Mode:[/bold green] Running all demo steps\n")
+            
+            for step_name, step_func in tqdm(demo_steps, desc="Demo Progress", unit="step"):
+                step_func()
+                time.sleep(0.5)  # Brief pause for readability
         
+        # Final summary
         print_section("DEMO COMPLETE")
-        print("\n✅ All queries executed successfully!")
-        print("\n💡 Key Takeaways:")
-        print("   • Cache hits are significantly faster than database queries")
-        print("   • Complex queries benefit most from caching (50-250x improvement)")
-        print("   • Cache invalidation allows for data freshness control")
-        print("   • TTL can be tuned based on data volatility")
+        console.print("\n[green]✅ All queries executed successfully![/green]\n")
         
+        # Key takeaways in a nice table
+        takeaways_table = Table(title="💡 Key Takeaways", box=box.ROUNDED, show_header=False)
+        takeaways_table.add_column("", style="cyan")
+        takeaways_table.add_row("• Cache hits are significantly faster than database queries")
+        takeaways_table.add_row("• Complex queries benefit most from caching (50-250x improvement)")
+        takeaways_table.add_row("• Cache invalidation allows for data freshness control")
+        takeaways_table.add_row("• TTL can be tuned based on data volatility")
+        console.print(takeaways_table)
+        
+    except KeyboardInterrupt:
+        console.print("\n[yellow]⚠ Demo interrupted by user[/yellow]")
     except Exception as e:
-        print(f"\n❌ Error during demo: {e}")
+        console.print(f"\n[red]❌ Error during demo: {e}[/red]")
         import traceback
         traceback.print_exc()
     
     finally:
         # Cleanup
-        print("\n🧹 Cleaning up connections...")
+        console.print("\n[cyan]🧹 Cleaning up connections...[/cyan]")
         cache.close()
-        print("   ✓ Connections closed")
-    
-    print("\n" + "=" * 80 + "\n")
+        console.print("[green]✓[/green] Connections closed\n")
 
 
 if __name__ == "__main__":
-    main()
+    app()
