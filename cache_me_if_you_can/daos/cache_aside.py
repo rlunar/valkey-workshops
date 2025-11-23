@@ -125,21 +125,21 @@ if __name__ == "__main__":
     print("\n1. First execution (should be CACHE_MISS ❌):")
     results, source, latency = cache.execute_query(query)
     print(f"   Source: {source}")
-    print(f"   Latency: {latency:.2f} ms")
+    print(f"   Latency: {latency:.3f} ms")
     print(f"   Results: {results}")
     
     # Second execution (cache hit)
     print("\n2. Second execution (should be CACHE_HIT ✅):")
     results, source, latency = cache.execute_query(query)
     print(f"   Source: {source}")
-    print(f"   Latency: {latency:.2f} ms")
+    print(f"   Latency: {latency:.3f} ms")
     print(f"   Results: {results}")
     
     # Force refresh
     print("\n3. Force refresh (bypasses cache ⏭️):")
     results, source, latency = cache.execute_query(query, force_refresh=True)
     print(f"   Source: {source}")
-    print(f"   Latency: {latency:.2f} ms")
+    print(f"   Latency: {latency:.3f} ms")
     
     # Invalidate cache
     print("\n4. Invalidating cache...")
@@ -150,7 +150,7 @@ if __name__ == "__main__":
     print("\n5. Query after invalidation (should be CACHE_MISS ❌):")
     results, source, latency = cache.execute_query(query)
     print(f"   Source: {source}")
-    print(f"   Latency: {latency:.2f} ms")
+    print(f"   Latency: {latency:.3f} ms")
     
     # Cleanup
     cache.close()
