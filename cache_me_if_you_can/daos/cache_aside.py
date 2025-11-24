@@ -6,6 +6,13 @@ cache engines (Redis, Valkey, Memcached) via environment variables.
 """
 
 import os
+import sys
+from pathlib import Path
+
+# Add parent directory to path when running as script
+if __name__ == "__main__":
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+
 import hashlib
 import json
 from typing import Optional, Tuple
