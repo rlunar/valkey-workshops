@@ -10,8 +10,9 @@ with Valkey caching, simulating multiple concurrent users and capturing detailed
 metrics in JSON format.
 
 Usage:
-    python samples/multi_threaded_performance_test.py --users 4 --queries 10 --read_rate 80
-    python samples/multi_threaded_performance_test.py --users 10 --queries 100 --read_rate 90 --ssl true
+    python samples/demo_multi_threaded_performance.py --threads 4 --queries 10000 --read-ratio 80
+    python samples/demo_multi_threaded_performance.py --interactive --verbose --flush
+    python samples/demo_multi_threaded_performance.py --threads 10 --queries 50000 --read-ratio 90 --random
 """
 
 import json
@@ -20,12 +21,18 @@ import threading
 import sys
 import os
 import time
-import string
-import argparse
 from pathlib import Path
 from datetime import datetime
 from sqlalchemy import text
 from dotenv import load_dotenv
+import typer
+from rich.console import Console
+from rich.table import Table
+from rich.panel import Panel
+from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn, TimeRemainingColumn
+from rich import box
+from rich.prompt import Confirm, IntPrompt
+from tqdm import tqdm
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -35,12 +42,46 @@ from core import get_db_engine, get_cache_client
 # Load environment variables
 load_dotenv()
 
+# Initialize typer app and rich console
+app = typer.Typer(help="Multi-threaded Performance Test with Valkey Cache")
+console = Console()
+
+# Global verbose flag
+VERBOSE = False
+
+
+def print_section(title: str):
+    """Print a formatted section header using rich."""
+    console.print()
+    console.print(Panel(f"[bold cyan]{title}[/bold cyan]", box=box.DOUBLE))
+
+
+def print_verbose_info(query: str, cache_key: str, sample_passenger_id: int):
+    """Print verbose information about queries and cache keys."""
+    if not VERBOSE:
+        return
+    
+    console.print("\n[dim]─── Sample Query Details ───[/dim]")
+    console.print(Panel(
+        f"[cyan]{query}[/cyan]",
+        title="[bold]SQL Query Template[/bold]",
+        border_style="dim",
+        box=box.ROUNDED
+    ))
+    console.print(f"[dim]Cache Key Format:[/dim] [yellow]{cache_key}[/yellow]")
+    console.print(f"[dim]Sample Passenger ID:[/dim] [yellow]{sample_passenger_id}[/yellow]")
+
 
 class PerformanceTest:
     """Manages multi-threaded performance testing with metrics collection"""
     
-    def __init__(self, args):
-        self.args = args
+    def __init__(self, threads: int, queries: int, read_ratio: int, ttl: int, random_passengers: bool):
+        self.threads = threads
+        self.queries = queries
+        self.read_ratio = read_ratio / 100.0
+        self.ttl = ttl
+        self.random_passengers = random_passengers
+        
         self.read_count = 0
         self.write_count = 0
         self.cache_hit = 0
@@ -73,6 +114,9 @@ class PerformanceTest:
             VALUES(:flight, :passenger, 1000.00, '1A')
         """)
         
+        # Passenger pool for non-random mode
+        self.passenger_pool = []
+        
         self._setup_connections()
     
     def _setup_connections(self):
@@ -85,7 +129,7 @@ class PerformanceTest:
                 user=self.db_params['user'],
                 password=self.db_params['password'],
                 database=self.db_params['database'],
-                pool_size=self.args.users,
+                pool_size=self.threads,
                 max_overflow=50
             )
             self.engine_ro = get_db_engine(
@@ -94,14 +138,14 @@ class PerformanceTest:
                 user=self.db_params['user'],
                 password=self.db_params['password'],
                 database=self.db_params['database'],
-                pool_size=self.args.users,
+                pool_size=self.threads,
                 max_overflow=50
             )
             
             # Test connections
             self.engine_rw.connect()
             self.engine_ro.connect()
-            print("✓ Connected to MySQL database")
+            console.print("[green]✓[/green] Connected to MySQL database")
             
             # Valkey connections using core module
             cache_write = get_cache_client(
@@ -119,15 +163,33 @@ class PerformanceTest:
             
             # Test Valkey connection
             self.valkey_write.ping()
-            print("✓ Connected to Valkey cache")
+            console.print("[green]✓[/green] Connected to Valkey cache")
+            
+            # Setup passenger pool if not using random mode
+            if not self.random_passengers:
+                self._setup_passenger_pool()
             
         except Exception as e:
-            print(f"✗ Connection error: {e}")
+            console.print(f"[red]✗ Connection error: {e}[/red]")
             sys.exit(1)
     
+    def _setup_passenger_pool(self):
+        """Setup a limited pool of passenger IDs for non-random mode"""
+        console.print(f"\n[cyan]Setting up passenger pool...[/cyan]")
+        pool_size = min(self.queries, 10000)  # Limit pool size
+        self.passenger_pool = list(range(4, 4 + pool_size))
+        console.print(f"[green]✓[/green] Passenger pool created: {len(self.passenger_pool)} IDs")
+    
     def _should_read(self):
-        """Determine if operation should be read or write based on read_rate"""
-        return random.triangular(0, 1, self.args.read_rate) < self.args.read_rate
+        """Determine if operation should be read or write based on read_ratio"""
+        return random.random() < self.read_ratio
+    
+    def _get_passenger_id(self):
+        """Get passenger ID based on random mode"""
+        if self.random_passengers:
+            return random.randrange(4, 35000)
+        else:
+            return random.choice(self.passenger_pool)
     
     def _execute_read(self, engine, query):
         """Execute a read query"""
@@ -171,10 +233,10 @@ class PerformanceTest:
             elif operation_type == "cache_miss":
                 metrics["cache_misses"] += 1
     
-    def worker_thread(self):
+    def worker_thread(self, progress_task=None, progress_obj=None):
         """Worker function executed by each thread"""
-        for _ in range(self.args.queries):
-            passenger_id = random.randrange(4, 35000)
+        for _ in range(self.queries):
+            passenger_id = self._get_passenger_id()
             flight_id = random.randrange(4, 35000)
             cache_key = f"bookings:{passenger_id}"
             
@@ -198,8 +260,8 @@ class PerformanceTest:
                     data = self._execute_read(self.engine_ro, read_query)
                     end_time_ns = time.time_ns()
                     
-                    # Update cache
-                    self.valkey_write.set(cache_key, str(data))
+                    # Update cache with TTL
+                    self.valkey_write.set(cache_key, str(data), px=self.ttl)
                     
                     query_time_ns = end_time_ns - start_time_ns
                     with self.lock:
@@ -211,10 +273,10 @@ class PerformanceTest:
                 write_query = self.WRITE_QUERY.bindparams(flight=flight_id, passenger=passenger_id)
                 self._execute_write(self.engine_rw, write_query)
                 
-                # Update cache after write
+                # Update cache after write with TTL
                 read_query = self.READ_QUERY.bindparams(passenger=passenger_id)
                 data = self._execute_read(self.engine_ro, read_query)
-                self.valkey_write.set(cache_key, str(data))
+                self.valkey_write.set(cache_key, str(data), px=self.ttl)
                 
                 end_time_ns = time.time_ns()
                 query_time_ns = end_time_ns - start_time_ns
@@ -222,33 +284,74 @@ class PerformanceTest:
                 with self.lock:
                     self.write_count += 1
                 self._record_metric(str(int(start_time_ns // 1_000_000_000)), query_time_ns, "write")
+            
+            # Update progress if available
+            if progress_obj and progress_task is not None:
+                progress_obj.update(progress_task, advance=1)
     
-    def run(self):
+    def run(self, show_progress: bool = True):
         """Execute the performance test"""
-        print(f"\n{'='*60}")
-        print(f"Starting Performance Test")
-        print(f"{'='*60}")
-        print(f"Users (threads): {self.args.users}")
-        print(f"Queries per user: {self.args.queries}")
-        print(f"Read rate: {int(self.args.read_rate * 100)}%")
-        print(f"SSL enabled: {self.args.ssl}")
-        print(f"{'='*60}\n")
+        print_section("PERFORMANCE TEST CONFIGURATION")
         
-        # Create and start threads
+        # Configuration table
+        config_table = Table(box=box.SIMPLE, show_header=False)
+        config_table.add_column("Parameter", style="cyan bold")
+        config_table.add_column("Value", style="yellow")
+        
+        config_table.add_row("Threads", str(self.threads))
+        config_table.add_row("Queries per thread", str(self.queries))
+        config_table.add_row("Total queries", str(self.threads * self.queries))
+        config_table.add_row("Read ratio", f"{int(self.read_ratio * 100)}%")
+        config_table.add_row("Write ratio", f"{int((1 - self.read_ratio) * 100)}%")
+        config_table.add_row("Cache TTL", f"{self.ttl} ms")
+        config_table.add_row("Passenger mode", "Random (all)" if self.random_passengers else f"Pool ({len(self.passenger_pool)} IDs)")
+        
+        console.print(config_table)
+        
+        print_section("RUNNING PERFORMANCE TEST")
+        
+        # Create and start threads with progress bar
         threads = []
         test_start = time.time()
+        total_operations = self.threads * self.queries
         
-        for i in range(self.args.users):
-            thread = threading.Thread(target=self.worker_thread)
-            threads.append(thread)
-            thread.start()
-        
-        # Wait for all threads to complete
-        for thread in threads:
-            thread.join()
+        if show_progress:
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                TaskProgressColumn(),
+                TimeRemainingColumn(),
+                console=console
+            ) as progress:
+                task = progress.add_task(
+                    f"[cyan]Processing {total_operations:,} operations...",
+                    total=total_operations
+                )
+                
+                for i in range(self.threads):
+                    thread = threading.Thread(target=self.worker_thread, args=(task, progress))
+                    threads.append(thread)
+                    thread.start()
+                
+                # Wait for all threads to complete
+                for thread in threads:
+                    thread.join()
+        else:
+            console.print(f"\n[cyan]Starting {self.threads} threads...[/cyan]")
+            for i in range(self.threads):
+                thread = threading.Thread(target=self.worker_thread)
+                threads.append(thread)
+                thread.start()
+            
+            # Wait for all threads to complete
+            for thread in threads:
+                thread.join()
         
         test_end = time.time()
         total_duration = test_end - test_start
+        
+        console.print(f"\n[green]✓[/green] Test completed in {total_duration:.2f} seconds")
         
         # Display results
         self._display_results(total_duration)
@@ -259,24 +362,70 @@ class PerformanceTest:
         return log_file
     
     def _display_results(self, duration):
-        """Display test results"""
+        """Display test results using rich tables and termgraph"""
         total_queries = self.read_count + self.write_count
         
-        print(f"\n{'='*60}")
-        print(f"Performance Test Results")
-        print(f"{'='*60}")
-        print(f"Total duration: {duration:.2f} seconds")
-        print(f"Total queries: {total_queries}")
-        print(f"Queries per second: {total_queries / duration:.2f}")
-        print(f"\nOperation Breakdown:")
-        print(f"  Reads: {self.read_count} ({self.read_count/total_queries*100:.1f}%)")
-        print(f"  Writes: {self.write_count} ({self.write_count/total_queries*100:.1f}%)")
-        print(f"\nCache Performance:")
-        print(f"  Cache hits: {self.cache_hit}")
-        print(f"  Cache misses: {self.cache_miss}")
+        print_section("PERFORMANCE TEST RESULTS")
+        
+        # Summary metrics table
+        summary_table = Table(title="📊 Summary Metrics", box=box.ROUNDED, show_lines=True)
+        summary_table.add_column("Metric", style="cyan bold")
+        summary_table.add_column("Value", style="yellow", justify="right")
+        
+        summary_table.add_row("Total Duration", f"{duration:.2f} seconds")
+        summary_table.add_row("Total Queries", f"{total_queries:,}")
+        summary_table.add_row("Queries per Second", f"{total_queries / duration:,.2f}")
+        summary_table.add_row("Avg Latency per Query", f"{(duration * 1000) / total_queries:.3f} ms")
+        
+        console.print(summary_table)
+        
+        # Operation breakdown table
+        console.print()
+        ops_table = Table(title="📈 Operation Breakdown", box=box.ROUNDED, show_lines=True)
+        ops_table.add_column("Operation", style="cyan bold")
+        ops_table.add_column("Count", style="yellow", justify="right")
+        ops_table.add_column("Percentage", style="green", justify="right")
+        
+        ops_table.add_row("Reads", f"{self.read_count:,}", f"{self.read_count/total_queries*100:.1f}%")
+        ops_table.add_row("Writes", f"{self.write_count:,}", f"{self.write_count/total_queries*100:.1f}%")
+        
+        console.print(ops_table)
+        
+        # Cache performance table
+        console.print()
+        cache_table = Table(title="⚡ Cache Performance", box=box.ROUNDED, show_lines=True)
+        cache_table.add_column("Metric", style="cyan bold")
+        cache_table.add_column("Count", style="yellow", justify="right")
+        cache_table.add_column("Percentage", style="green", justify="right")
+        
+        cache_table.add_row("Cache Hits", f"{self.cache_hit:,}", 
+                           f"{self.cache_hit/self.read_count*100:.1f}%" if self.read_count > 0 else "N/A")
+        cache_table.add_row("Cache Misses", f"{self.cache_miss:,}", 
+                           f"{self.cache_miss/self.read_count*100:.1f}%" if self.read_count > 0 else "N/A")
+        cache_table.add_row("Total Reads", f"{self.read_count:,}", "100.0%")
+        
+        console.print(cache_table)
+        
+        # Simple bar chart visualization using rich
+        console.print()
+        console.print("[bold cyan]📊 Visual Breakdown:[/bold cyan]\n")
+        
+        # Operation breakdown bar
+        read_bar_length = int((self.read_count / total_queries) * 50)
+        write_bar_length = int((self.write_count / total_queries) * 50)
+        
+        console.print("[yellow]Operations:[/yellow]")
+        console.print(f"  Reads  [{'█' * read_bar_length}{' ' * (50 - read_bar_length)}] {self.read_count:,}")
+        console.print(f"  Writes [{'█' * write_bar_length}{' ' * (50 - write_bar_length)}] {self.write_count:,}")
+        
+        # Cache performance bar
         if self.read_count > 0:
-            print(f"  Hit rate: {self.cache_hit/self.read_count*100:.1f}%")
-        print(f"{'='*60}\n")
+            hit_bar_length = int((self.cache_hit / self.read_count) * 50)
+            miss_bar_length = int((self.cache_miss / self.read_count) * 50)
+            
+            console.print("\n[green]Cache Performance:[/green]")
+            console.print(f"  Hits   [{'█' * hit_bar_length}{' ' * (50 - hit_bar_length)}] {self.cache_hit:,}")
+            console.print(f"  Misses [{'█' * miss_bar_length}{' ' * (50 - miss_bar_length)}] {self.cache_miss:,}")
     
     def _save_results(self, duration):
         """Save results to JSON log file"""
@@ -285,7 +434,7 @@ class PerformanceTest:
         
         # Generate log filename
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        log_file = f"logs/perf_test_{timestamp}_{self.args.log_tag}.json"
+        log_file = f"logs/perf_test_{timestamp}.json"
         
         # Calculate aggregate metrics (convert nanoseconds to microseconds for presentation)
         aggregate_metrics = {
@@ -322,11 +471,14 @@ class PerformanceTest:
         # Prepare output data
         output_data = {
             "test_config": {
-                "users": self.args.users,
-                "queries_per_user": self.args.queries,
-                "read_rate": int(self.args.read_rate * 100),
-                "ssl_enabled": self.args.ssl,
-                "log_tag": self.args.log_tag
+                "threads": self.threads,
+                "queries_per_thread": self.queries,
+                "total_queries": self.threads * self.queries,
+                "read_ratio": int(self.read_ratio * 100),
+                "write_ratio": int((1 - self.read_ratio) * 100),
+                "ttl_ms": self.ttl,
+                "random_passengers": self.random_passengers,
+                "passenger_pool_size": len(self.passenger_pool) if not self.random_passengers else "all"
             },
             "summary": {
                 "total_duration_seconds": round(duration, 2),
@@ -350,58 +502,172 @@ class PerformanceTest:
         with open(log_file, 'w') as f:
             json.dump(output_data, f, indent=2)
         
-        print(f"✓ Results saved to: {log_file}\n")
+        console.print(f"\n[green]✓[/green] Results saved to: [cyan]{log_file}[/cyan]")
         return log_file
 
 
-def main():
-    """Main entry point"""
-    parser = argparse.ArgumentParser(
-        description="Multi-threaded performance test for MySQL + Valkey cache",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  # Basic test with 4 users, 10 queries each, 80% reads
-  python samples/multi_threaded_performance_test.py
-  
-  # High concurrency test
-  python samples/multi_threaded_performance_test.py --users 20 --queries 100
-  
-  # Write-heavy workload with SSL
-  python samples/multi_threaded_performance_test.py --users 10 --queries 50 --read_rate 30 --ssl true
-        """
+@app.command()
+def run(
+    threads: int = typer.Option(
+        4,
+        "--threads",
+        "-t",
+        help="Number of concurrent threads to simulate"
+    ),
+    queries: int = typer.Option(
+        10000,
+        "--queries",
+        "-q",
+        help="Number of queries per thread"
+    ),
+    read_ratio: int = typer.Option(
+        80,
+        "--read-ratio",
+        "-r",
+        help="Percentage of read operations (0-100)"
+    ),
+    ttl: int = typer.Option(
+        300000,
+        "--ttl",
+        help="Cache TTL in milliseconds"
+    ),
+    random: bool = typer.Option(
+        False,
+        "--random",
+        help="Use random passenger IDs (all passengers). If not set, uses limited pool"
+    ),
+    interactive: bool = typer.Option(
+        False,
+        "--interactive",
+        "-i",
+        help="Run in interactive mode with prompts"
+    ),
+    verbose: bool = typer.Option(
+        False,
+        "--verbose",
+        "-v",
+        help="Show SQL query and cache key format with sample"
+    ),
+    flush: bool = typer.Option(
+        False,
+        "--flush",
+        "-f",
+        help="Flush Valkey cache before running test"
     )
+):
+    """
+    Run multi-threaded performance test for MySQL + Valkey cache.
     
-    parser.add_argument('--users', type=int, default=4,
-                       help='Number of concurrent users (threads) to simulate (default: 4)')
-    parser.add_argument('--queries', type=int, default=10,
-                       help='Number of queries per user (default: 10)')
-    parser.add_argument('--read_rate', type=int, default=80,
-                       help='Percentage of read operations (0-100, default: 80)')
-    parser.add_argument('--ssl', type=lambda x: str(x).lower() == 'true', default=False,
-                       help='Enable SSL/TLS for Valkey connection (default: false)')
-    parser.add_argument('--log_tag', type=str, default=None,
-                       help='Custom tag for log file (default: random 8-char string)')
+    Examples:
     
-    args = parser.parse_args()
+      # Basic test with defaults
+      python samples/demo_multi_threaded_performance.py
+      
+      # High concurrency test
+      python samples/demo_multi_threaded_performance.py --threads 20 --queries 50000
+      
+      # Write-heavy workload
+      python samples/demo_multi_threaded_performance.py --threads 10 --queries 10000 --read-ratio 30
+      
+      # Interactive mode with verbose output
+      python samples/demo_multi_threaded_performance.py --interactive --verbose --flush
+      
+      # Random passenger mode (all passengers)
+      python samples/demo_multi_threaded_performance.py --threads 8 --queries 20000 --random
+    """
     
-    # Validate and adjust parameters
-    args.read_rate = max(0, min(100, args.read_rate)) / 100
+    # Set global verbose flag
+    global VERBOSE
+    VERBOSE = verbose
     
-    if not args.log_tag:
-        args.log_tag = ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
+    # Validate parameters
+    read_ratio = max(0, min(100, read_ratio))
+    
+    # Print header
+    console.print()
+    console.print(Panel.fit(
+        "[bold cyan]MULTI-THREADED PERFORMANCE TEST[/bold cyan]\n"
+        "[yellow]MySQL Database + Valkey Cache Performance Analysis[/yellow]",
+        border_style="cyan",
+        box=box.DOUBLE
+    ))
+    
+    # Interactive mode - allow parameter customization
+    if interactive:
+        console.print("\n[bold yellow]Interactive Mode:[/bold yellow] Customize test parameters\n")
+        
+        if Confirm.ask("Would you like to customize test parameters?", default=False):
+            threads = IntPrompt.ask("Number of threads", default=threads)
+            queries = IntPrompt.ask("Queries per thread", default=queries)
+            read_ratio = IntPrompt.ask("Read ratio (0-100)", default=read_ratio)
+            ttl = IntPrompt.ask("Cache TTL (milliseconds)", default=ttl)
+            random = Confirm.ask("Use random passenger IDs?", default=random)
+            flush = Confirm.ask("Flush cache before test?", default=flush)
+    
+    # Initialize test with progress indicator
+    console.print()
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console
+    ) as progress:
+        task = progress.add_task("[cyan]Initializing performance test...", total=None)
+        test = PerformanceTest(threads, queries, read_ratio, ttl, random)
+        progress.update(task, completed=True)
+    
+    # Flush cache if requested
+    if flush:
+        console.print("\n[yellow]🧹 Flushing Valkey cache...[/yellow]")
+        try:
+            test.valkey_write.flushall()
+            console.print("[green]✓[/green] Cache flushed successfully")
+        except Exception as e:
+            console.print(f"[red]❌ Error flushing cache: {e}[/red]")
+    
+    # Show verbose information
+    if verbose:
+        sample_passenger_id = test._get_passenger_id()
+        cache_key = f"bookings:{sample_passenger_id}"
+        query = str(test.READ_QUERY).strip()
+        print_verbose_info(query, cache_key, sample_passenger_id)
+    
+    # Confirm start in interactive mode
+    if interactive:
+        console.print()
+        if not Confirm.ask("Start performance test?", default=True):
+            console.print("[yellow]Test cancelled[/yellow]")
+            return
     
     # Run the test
     try:
-        test = PerformanceTest(args)
-        test.run()
+        log_file = test.run(show_progress=True)
+        
+        # Final summary
+        print_section("TEST COMPLETE")
+        console.print("\n[green]✅ Performance test completed successfully![/green]\n")
+        
+        # Key takeaways
+        takeaways_table = Table(title="💡 Key Insights", box=box.ROUNDED, show_header=False)
+        takeaways_table.add_column("", style="cyan")
+        takeaways_table.add_row("• Multi-threaded execution simulates real-world concurrent load")
+        takeaways_table.add_row("• Cache-aside pattern significantly reduces database load")
+        takeaways_table.add_row("• Higher cache hit rates = better performance")
+        takeaways_table.add_row("• TTL controls cache freshness vs performance trade-off")
+        takeaways_table.add_row(f"• Results saved to: {log_file}")
+        
+        console.print(takeaways_table)
+        console.print()
+        
     except KeyboardInterrupt:
-        print("\n\n✗ Test interrupted by user")
+        console.print("\n[yellow]⚠ Test interrupted by user[/yellow]")
         sys.exit(1)
     except Exception as e:
-        print(f"\n✗ Test failed: {e}")
+        console.print(f"\n[red]❌ Test failed: {e}[/red]")
+        if verbose:
+            import traceback
+            traceback.print_exc()
         sys.exit(1)
 
 
 if __name__ == "__main__":
-    main()
+    app()
