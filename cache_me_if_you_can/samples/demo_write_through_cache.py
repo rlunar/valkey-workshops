@@ -411,7 +411,7 @@ def run(
         console=console
     ) as progress:
         task = progress.add_task("[cyan]Initializing write-through cache handler...", total=None)
-        cache = WriteThroughCache(verbose=verbose)
+        cache = WriteThroughCache()
         progress.update(task, completed=True)
     
     console.print("[green]✓[/green] Connected to database and cache\n")

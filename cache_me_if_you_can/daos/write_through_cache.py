@@ -12,6 +12,13 @@ This module provides:
 """
 
 import os
+import sys
+from pathlib import Path
+
+# Add parent directory to path when running as script
+if __name__ == "__main__":
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+
 import json
 from datetime import datetime
 from typing import Optional, Dict
@@ -23,16 +30,11 @@ from core import get_db_engine, get_cache_client
 class WriteThroughCache:
     """Write-through cache implementation for flight data."""
     
-    def __init__(self, verbose: bool = False):
-        """Initialize database and cache connections.
-        
-        Args:
-            verbose: If True, print SQL queries and cache keys
-        """
+    def __init__(self):
+        """Initialize database and cache connections."""
         self.db_engine = get_db_engine()
         self.cache = get_cache_client()
         self.default_ttl = int(os.getenv("CACHE_TTL", "3600"))
-        self.verbose = verbose
     
     def _generate_cache_key(self, entity_type: str, entity_id: int) -> str:
         """Generate cache key for entity."""
@@ -63,14 +65,9 @@ class WriteThroughCache:
         
         if cached_data:
             latency_ms = (time.perf_counter() - start_time) * 1000
-            if not self.verbose:
-                print(f"   ✓ Cache HIT for flight {flight_id}")
             return json.loads(cached_data), "CACHE_HIT", latency_ms, cache_key, ""
         
         # Cache miss - query database
-        if not self.verbose:
-            print(f"   ✗ Cache MISS for flight {flight_id}")
-        
         query_str = """
             SELECT 
                 f.flight_id,
@@ -158,7 +155,6 @@ class WriteThroughCache:
                 old_data = result.fetchone()
                 
                 if not old_data:
-                    print(f"   ✗ Flight {flight_id} not found")
                     return False, queries_executed
                 
                 old_dict = dict(old_data._mapping)
@@ -220,9 +216,6 @@ class WriteThroughCache:
                     "airline_id": old_dict["airline_id"],
                     "comment": comment or "Flight time updated"
                 })
-                
-                if not self.verbose:
-                    print(f"   ✓ Database updated for flight {flight_id}")
             
             # Write-through: Update cache immediately after database
             cache_key = self._generate_cache_key("flight", flight_id)
@@ -231,14 +224,11 @@ class WriteThroughCache:
             self.cache.delete(cache_key)
             
             # Get fresh data from database to update cache (will be cache miss)
-            updated_flight = self.get_flight(flight_id)
-            if updated_flight and not self.verbose:
-                print(f"   ✓ Cache updated for flight {flight_id}")
+            self.get_flight(flight_id)
             
             return True, queries_executed
             
         except Exception as e:
-            print(f"   ✗ Update failed: {e}")
             return False, queries_executed
     
     def verify_consistency(self, flight_id: int) -> Dict:
@@ -319,3 +309,86 @@ class WriteThroughCache:
         """Close database and cache connections."""
         self.db_engine.dispose()
         self.cache.close()
+
+
+# Example usage
+if __name__ == "__main__":
+    from datetime import timedelta
+    
+    # Initialize write-through cache handler
+    cache = WriteThroughCache()
+    
+    # Use a specific flight ID
+    flight_id = 115
+    
+    print("=" * 60)
+    print("Write-Through Cache Pattern Demo")
+    print("=" * 60)
+    
+    # Step 1: Initial read (cache miss)
+    print("\n1. First read (should be CACHE_MISS ❌):")
+    flight, source, latency, cache_key, query = cache.get_flight(flight_id)
+    print(f"   Source: {source}")
+    print(f"   Latency: {latency:.3f} ms")
+    print(f"   Cache Key: {cache_key}")
+    if flight:
+        print(f"   Flight: {flight['flightno']} - {flight['from_airport']} → {flight['to_airport']}")
+    
+    # Step 2: Second read (cache hit)
+    print("\n2. Second read (should be CACHE_HIT ✅):")
+    flight, source, latency, cache_key, query = cache.get_flight(flight_id)
+    print(f"   Source: {source}")
+    print(f"   Latency: {latency:.3f} ms")
+    
+    if flight:
+        # Step 3: Update flight times (write-through)
+        print("\n3. Update flight times (write-through):")
+        current_departure = datetime.fromisoformat(flight["departure"])
+        current_arrival = datetime.fromisoformat(flight["arrival"])
+        
+        new_departure = current_departure + timedelta(hours=2)
+        new_arrival = current_arrival + timedelta(hours=2)
+        
+        print(f"   Old departure: {current_departure}")
+        print(f"   New departure: {new_departure}")
+        
+        success, queries = cache.update_flight_departure(
+            flight_id=flight_id,
+            new_departure=new_departure,
+            new_arrival=new_arrival,
+            user="demo_user",
+            comment="Flight delayed by 2 hours"
+        )
+        
+        if success:
+            print(f"   ✓ Update successful ({len(queries)} queries executed)")
+        else:
+            print(f"   ✗ Update failed")
+        
+        # Step 4: Verify consistency
+        print("\n4. Verify consistency:")
+        consistency = cache.verify_consistency(flight_id)
+        if consistency["consistent"]:
+            print(f"   ✓ Data is CONSISTENT between database and cache")
+        else:
+            print(f"   ✗ Data INCONSISTENCY detected!")
+            print(f"   Reason: {consistency.get('reason', 'Unknown')}")
+        
+        # Step 5: Restore original times
+        print("\n5. Restore original times:")
+        success, queries = cache.update_flight_departure(
+            flight_id=flight_id,
+            new_departure=current_departure,
+            new_arrival=current_arrival,
+            user="demo_user",
+            comment="Restoring original times"
+        )
+        
+        if success:
+            print(f"   ✓ Original times restored")
+        else:
+            print(f"   ✗ Restore failed")
+    
+    # Cleanup
+    cache.close()
+    print("\n" + "=" * 60)
