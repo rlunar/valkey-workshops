@@ -10,6 +10,7 @@ Enhanced demos include:
 - Write-Through: Consistency verification, detailed output
 - Write-Behind: Async operations, queue monitoring
 - Weather API: Country flags 🇺🇸, weather emojis ☀️, syntax-highlighted JSON
+- Semantic Cache: Vector similarity for NLP queries, token savings, performance metrics
 - Multi-threaded: Performance metrics, JSON output, visualization support
 
 Usage:
@@ -265,7 +266,7 @@ def main(
     
     4. Weather API Cache - Real-world API caching with emojis
     
-    5. Semantic Search - Vector similarity search
+    5. Semantic Cache - Vector similarity caching for NLP to SQL queries
     
     6. Multi-threaded Performance - Concurrent load testing
     
@@ -401,15 +402,15 @@ def main(
     )
     runner.prompt_continue()
     
-    # Demo 5: Semantic Search
+    # Demo 5: Semantic Cache
     runner.run_demo(
-        name="Semantic Search Demo",
-        script="demo_semantic_search.py",
-        description="Vector similarity search with embeddings (requires pre-generated embeddings)",
-        tip="Generate embeddings first if this demo fails",
-        supports_interactive=False,
-        supports_verbose=False,
-        supports_flush=False
+        name="Semantic Cache Pattern Demo",
+        script="demo_semantic_cache.py",
+        description="Vector similarity caching for natural language SQL queries with embeddings",
+        tip="Watch for semantic cache hits on similar queries - saves LLM tokens and latency",
+        supports_interactive=True,
+        supports_verbose=True,
+        supports_flush=True
     )
     runner.prompt_continue()
     
