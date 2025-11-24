@@ -26,7 +26,14 @@ class NLPToSQL:
     def __init__(self, knowledge_base_path: str = None, model: str = None):
         # Use environment variables with fallbacks
         if knowledge_base_path is None:
-            knowledge_base_path = os.getenv("KNOWLEDGE_BASE_PATH", "../knowledge_base")
+            kb_path_env = os.getenv("KNOWLEDGE_BASE_PATH", "knowledge_base")
+            # If path is relative, make it relative to the script's directory
+            if not os.path.isabs(kb_path_env):
+                # Get the directory where this script is located
+                script_dir = Path(__file__).parent.parent
+                knowledge_base_path = str(script_dir / kb_path_env)
+            else:
+                knowledge_base_path = kb_path_env
         if model is None:
             model = os.getenv("OLLAMA_MODEL", "codellama")
         
@@ -34,8 +41,19 @@ class NLPToSQL:
         self.ollama_url = os.getenv("OLLAMA_URL", "http://localhost:11434/api/generate")
         self.model = model
         self.context = self._load_knowledge_base()
-        print(f"Loaded knowledge base from: {self.kb_path.absolute()}")
-        print(f"Using model: {self.model}\n")
+        
+        # Calculate context statistics
+        context_lines = len(self.context.split('\n'))
+        context_chars = len(self.context)
+        # Rough token estimate (1 token ≈ 4 chars for English)
+        estimated_tokens = context_chars // 4
+        
+        console.print(f"\n[bold cyan]Knowledge Base Loaded[/bold cyan]")
+        console.print(f"  📁 Path: [dim]{self.kb_path.absolute()}[/dim]")
+        console.print(f"  🤖 Model: [yellow]{self.model}[/yellow]")
+        console.print(f"  📄 Context: [cyan]{context_lines}[/cyan] lines, [cyan]{context_chars:,}[/cyan] chars")
+        console.print(f"  🔢 Estimated tokens: [magenta]~{estimated_tokens:,}[/magenta]")
+        console.print()
     
     def _load_knowledge_base(self) -> str:
         """Load and format knowledge base files into context string"""
@@ -55,48 +73,155 @@ class NLPToSQL:
                 for table in overview.get('tables', []):
                     context_parts.append(f"- {table['name']}: {table['description']}")
         
-        # Load key table schemas
-        important_tables = ['airport', 'flight', 'passenger', 'booking', 'airline']
-        context_parts.append("\n=== KEY TABLE SCHEMAS ===")
-        for table_name in important_tables:
+        # Load ALL table schemas (expanded from just 5 tables)
+        all_tables = [
+            'airport', 'airport_geo', 'airport_reachable',
+            'flight', 'flightschedule', 'flight_log',
+            'passenger', 'passengerdetails', 'booking',
+            'airline', 'airplane', 'airplane_type',
+            'employee', 'weatherdata'
+        ]
+        context_parts.append("\n=== TABLE SCHEMAS ===")
+        for table_name in all_tables:
             table_file = self.kb_path / f"{table_name}.json"
             if table_file.exists():
                 with open(table_file, 'r') as f:
                     table_data = json.load(f)
                     context_parts.append(f"\n{table_name.upper()}:")
-                    context_parts.append(f"Columns: {', '.join([col['name'] for col in table_data.get('columns', [])])}")
+                    
+                    # Add description if available
+                    if table_data.get('description'):
+                        context_parts.append(f"Description: {table_data['description']}")
+                    
+                    # Add columns with types
+                    if table_data.get('columns'):
+                        cols = [f"{col['name']} ({col.get('type', 'unknown')})" for col in table_data['columns']]
+                        context_parts.append(f"Columns: {', '.join(cols)}")
+                    
+                    # Add foreign keys
                     if table_data.get('foreign_keys'):
-                        fk_list = [f"{fk['column']} -> {fk['references_table']}" for fk in table_data['foreign_keys']]
+                        fk_list = [f"{fk['column']} -> {fk['references_table']}.{fk.get('references_column', 'id')}" 
+                                  for fk in table_data['foreign_keys']]
                         context_parts.append(f"Foreign Keys: {', '.join(fk_list)}")
+                    
+                    # Add indexes if available
+                    if table_data.get('indexes'):
+                        idx_list = [idx.get('name', 'unnamed') for idx in table_data['indexes']]
+                        context_parts.append(f"Indexes: {', '.join(idx_list)}")
         
-        # Load NL to SQL guide (compact version)
+        # Load query patterns
+        patterns_file = self.kb_path / "query_patterns.json"
+        if patterns_file.exists():
+            try:
+                with open(patterns_file, 'r') as f:
+                    patterns = json.load(f)
+                    context_parts.append("\n=== QUERY PATTERNS ===")
+                    for pattern in patterns.get('patterns', [])[:5]:
+                        context_parts.append(f"\n{pattern.get('name', 'Pattern')}:")
+                        context_parts.append(f"  Use: {pattern.get('use_case', 'N/A')}")
+                        if pattern.get('example'):
+                            context_parts.append(f"  Example: {pattern['example']}")
+            except json.JSONDecodeError as e:
+                console.print(f"[yellow]Warning: Could not parse {patterns_file.name}: {e}[/yellow]")
+        
+        # Load NL to SQL guide
         guide_file = self.kb_path / "nl_to_sql_guide.json"
         if guide_file.exists():
-            with open(guide_file, 'r') as f:
-                guide = json.load(f)
-                context_parts.append("\n=== CONVERSION RULES ===")
-                
-                # Add join patterns
-                if 'common_join_patterns' in guide:
-                    context_parts.append("\nCommon Joins:")
-                    for pattern_name, pattern in guide['common_join_patterns'].items():
-                        context_parts.append(f"- {pattern_name}: {pattern['description']}")
-                
-                # Add important notes
-                if 'important_notes' in guide:
-                    context_parts.append("\nImportant Notes:")
-                    if 'reserved_keywords' in guide['important_notes']:
-                        context_parts.append(f"- {guide['important_notes']['reserved_keywords']['note']}")
+            try:
+                with open(guide_file, 'r') as f:
+                    # Read and try to parse just the first JSON object
+                    content = f.read()
+                    # Find the first complete JSON object
+                    brace_count = 0
+                    first_obj_end = 0
+                    for i, char in enumerate(content):
+                        if char == '{':
+                            brace_count += 1
+                        elif char == '}':
+                            brace_count -= 1
+                            if brace_count == 0:
+                                first_obj_end = i + 1
+                                break
+                    
+                    if first_obj_end > 0:
+                        guide = json.loads(content[:first_obj_end])
+                        context_parts.append("\n=== CONVERSION RULES ===")
+                        
+                        # Add entity recognition
+                        if 'entity_recognition' in guide:
+                            context_parts.append("\nEntity Recognition:")
+                            for entity, info in list(guide['entity_recognition'].items())[:5]:
+                                context_parts.append(f"- {entity}: {info.get('table', 'N/A')} table")
+                        
+                        # Add keyword mappings
+                        if 'common_keywords_mapping' in guide:
+                            context_parts.append("\nKeyword Mappings:")
+                            for mapping, info in list(guide['common_keywords_mapping'].items())[:5]:
+                                keywords = ', '.join(info.get('keywords', [])[:3])
+                                context_parts.append(f"- {keywords} → {info.get('sql_operation', 'N/A')}")
+            except (json.JSONDecodeError, Exception) as e:
+                console.print(f"[yellow]Warning: Could not parse {guide_file.name}: {e}[/yellow]")
         
-        # Load examples (first 10 only to save context)
-        examples_file = self.kb_path / "nl_sql_examples.json"
-        if examples_file.exists():
-            with open(examples_file, 'r') as f:
-                examples_data = json.load(f)
-                context_parts.append("\n=== EXAMPLE QUERIES ===")
-                for example in examples_data.get('examples', [])[:10]:
-                    context_parts.append(f"\nQ: {example['prompt']}")
-                    context_parts.append(f"SQL: {example['sql']}")
+        # Load example queries from multiple sources
+        context_parts.append("\n=== EXAMPLE QUERIES ===")
+        
+        # Simple examples
+        simple_file = self.kb_path / "query_examples_simple.json"
+        if simple_file.exists():
+            try:
+                with open(simple_file, 'r') as f:
+                    examples = json.load(f)
+                    context_parts.append("\nSimple Queries:")
+                    for ex in examples.get('examples', [])[:3]:
+                        desc = ex.get('description') or ex.get('name') or 'Query'
+                        query = ex.get('query') or ex.get('sql', '')
+                        context_parts.append(f"Q: {desc}")
+                        context_parts.append(f"SQL: {query}")
+            except (json.JSONDecodeError, KeyError) as e:
+                console.print(f"[yellow]Warning: Could not parse {simple_file.name}[/yellow]")
+        
+        # Join examples
+        joins_file = self.kb_path / "query_examples_joins.json"
+        if joins_file.exists():
+            try:
+                with open(joins_file, 'r') as f:
+                    examples = json.load(f)
+                    context_parts.append("\nJoin Queries:")
+                    for ex in examples.get('examples', [])[:3]:
+                        desc = ex.get('description') or ex.get('name') or 'Query'
+                        query = ex.get('query') or ex.get('sql', '')
+                        context_parts.append(f"Q: {desc}")
+                        context_parts.append(f"SQL: {query}")
+            except (json.JSONDecodeError, KeyError) as e:
+                console.print(f"[yellow]Warning: Could not parse {joins_file.name}[/yellow]")
+        
+        # Aggregation examples
+        agg_file = self.kb_path / "query_examples_aggregations.json"
+        if agg_file.exists():
+            try:
+                with open(agg_file, 'r') as f:
+                    examples = json.load(f)
+                    context_parts.append("\nAggregation Queries:")
+                    for ex in examples.get('examples', [])[:3]:
+                        desc = ex.get('description') or ex.get('name') or 'Query'
+                        query = ex.get('query') or ex.get('sql', '')
+                        context_parts.append(f"Q: {desc}")
+                        context_parts.append(f"SQL: {query}")
+            except (json.JSONDecodeError, KeyError) as e:
+                console.print(f"[yellow]Warning: Could not parse {agg_file.name}[/yellow]")
+        
+        # NL to SQL examples
+        nl_examples_file = self.kb_path / "nl_sql_examples.json"
+        if nl_examples_file.exists():
+            try:
+                with open(nl_examples_file, 'r') as f:
+                    examples_data = json.load(f)
+                    context_parts.append("\nNatural Language Examples:")
+                    for example in examples_data.get('examples', [])[:5]:
+                        context_parts.append(f"Q: {example['prompt']}")
+                        context_parts.append(f"SQL: {example['sql']}")
+            except json.JSONDecodeError as e:
+                console.print(f"[yellow]Warning: Could not parse {nl_examples_file.name}[/yellow]")
         
         return "\n".join(context_parts)
     
@@ -113,6 +238,9 @@ IMPORTANT RULES:
 4. Use INNER JOIN for required relationships
 5. Always add LIMIT clause for queries that might return many rows
 6. Return ONLY the SQL query, no explanations
+7. Use best practices to create SQL queries
+8. Be explicit about table names and fields to reduce confusion
+9. Use LIMIT and OFFSET to show the first 10 results
 
 Natural Language Query: {natural_language_query}
 
@@ -369,13 +497,17 @@ SQL Query:"""
                 console.print(f"  • {warning}", style="yellow")
 
 
-def interactive_mode(converter: NLPToSQL):
+def interactive_mode(converter: NLPToSQL, verbose: bool = False):
     """Run in interactive mode"""
     console.print("\n" + "=" * 60, style="bold cyan")
     console.print("INTERACTIVE MODE", style="bold cyan")
     console.print("=" * 60, style="bold cyan")
     console.print("Enter your natural language queries (or 'quit' to exit)")
+    if verbose:
+        console.print("[dim]Verbose mode: Will show full prompt for first query[/dim]")
     console.print("=" * 60 + "\n", style="bold cyan")
+    
+    first_query = True
     
     while True:
         try:
@@ -388,6 +520,18 @@ def interactive_mode(converter: NLPToSQL):
             if not query:
                 continue
             
+            # Show prompt for first query if verbose
+            if verbose and first_query:
+                prompt = converter._build_prompt(query)
+                console.print("\n[bold yellow]📝 Full Prompt (first query only):[/bold yellow]")
+                console.print(Panel(
+                    prompt,
+                    title="Prompt sent to LLM",
+                    border_style="yellow",
+                    expand=False
+                ))
+                first_query = False
+            
             console.print("\n⏳ Generating SQL...", style="yellow")
             result = converter.generate_sql(query)
             
@@ -395,12 +539,19 @@ def interactive_mode(converter: NLPToSQL):
             console.print()
             converter.pretty_print_sql(result['sql'], title=f"Query: {query[:50]}...")
             
-            # Print stats
+            # Print stats with detailed token breakdown
             console.print(f"\n[bold]📊 Stats:[/bold]")
             console.print(f"   ⏱️  Time: [cyan]{result['time_taken']}s[/cyan]")
-            console.print(f"   🔢 Tokens: [cyan]{result['total_tokens']}[/cyan] (prompt: {result['prompt_eval_count']}, response: {result['eval_count']})")
+            console.print(f"   📥 Input Tokens: [yellow]{result['prompt_eval_count']:,}[/yellow]")
+            console.print(f"   📤 Output Tokens: [green]{result['eval_count']:,}[/green]")
+            console.print(f"   🔢 Total Tokens: [cyan]{result['total_tokens']:,}[/cyan]")
             if result['time_taken'] > 0:
-                console.print(f"   ⚡ Speed: [cyan]{result['eval_count'] / result['time_taken']:.1f} tokens/s[/cyan]")
+                console.print(f"   ⚡ Generation Speed: [cyan]{result['eval_count'] / result['time_taken']:,.1f} tokens/s[/cyan]")
+            
+            # Show token ratio
+            if result['prompt_eval_count'] > 0:
+                ratio = result['eval_count'] / result['prompt_eval_count']
+                console.print(f"   📊 Output/Input Ratio: [magenta]{ratio:.2f}[/magenta]")
             
         except KeyboardInterrupt:
             console.print("\n\nGoodbye!", style="bold green")
@@ -409,10 +560,12 @@ def interactive_mode(converter: NLPToSQL):
             console.print(f"[bold red]Error:[/bold red] {e}")
 
 
-def demo_mode(converter: NLPToSQL):
+def demo_mode(converter: NLPToSQL, verbose: bool = False):
     """Run demo with test queries"""
     console.print("\n" + "=" * 60, style="bold cyan")
     console.print("DEMO MODE - Running test queries", style="bold cyan")
+    if verbose:
+        console.print("[dim]Verbose mode: Will show full prompt for first query[/dim]")
     console.print("=" * 60 + "\n", style="bold cyan")
     
     test_queries = [
@@ -430,19 +583,36 @@ def demo_mode(converter: NLPToSQL):
         console.print(f"\n[bold]{i}. Natural Language:[/bold] [italic]{query}[/italic]")
         console.print("-" * 60, style="dim")
         
+        # Show prompt for first query if verbose
+        if verbose and i == 1:
+            prompt = converter._build_prompt(query)
+            console.print("\n[bold yellow]📝 Full Prompt (first query only):[/bold yellow]")
+            console.print(Panel(
+                prompt,
+                title="Prompt sent to LLM",
+                border_style="yellow",
+                expand=False
+            ))
+            console.print()
+        
         result = converter.generate_sql(query)
         
         # Pretty print the SQL with validation
         converter.pretty_print_sql(result['sql'], title=f"Query {i}")
         
-        console.print(f"\n[bold]📊 Stats:[/bold] ⏱️  [cyan]{result['time_taken']}s[/cyan] | 🔢 [cyan]{result['total_tokens']} tokens[/cyan] | ⚡ [cyan]{result['eval_count'] / result['time_taken']:.1f} tokens/s[/cyan]")
+        # Display detailed stats
+        console.print(f"\n[bold]📊 Stats:[/bold]")
+        console.print(f"   ⏱️  [cyan]{result['time_taken']}s[/cyan] | "
+                     f"📥 [yellow]{result['prompt_eval_count']:,}[/yellow] in | "
+                     f"📤 [green]{result['eval_count']:,}[/green] out | "
+                     f"⚡ [cyan]{result['eval_count'] / result['time_taken']:,.1f} tok/s[/cyan]")
         
         total_time += result['time_taken']
         total_tokens += result['total_tokens']
         console.print()
     
     console.print("\n" + "=" * 60, style="bold green")
-    console.print(f"📈 SUMMARY: {len(test_queries)} queries in {total_time:.2f}s | {total_tokens} total tokens", style="bold green")
+    console.print(f"📈 SUMMARY: {len(test_queries)} queries in {total_time:.2f}s | {total_tokens:,} total tokens", style="bold green")
     console.print("=" * 60, style="bold green")
 
 
@@ -452,29 +622,39 @@ def main():
     print("Natural Language to SQL Query Generator")
     print("=" * 60)
     
-    # Check for model argument
-    model = "tinyllama"
-    if len(sys.argv) > 1:
-        model = sys.argv[1]
+    # Parse arguments
+    model = None  # Will use .env default
+    mode = "demo"
+    verbose = False
     
-    # Initialize converter
+    # Check for flags and arguments
+    args = sys.argv[1:]
+    for arg in args:
+        if arg == "--verbose" or arg == "-v":
+            verbose = True
+        elif arg == "interactive":
+            mode = "interactive"
+        elif not arg.startswith("-"):
+            model = arg
+    
+    # Initialize converter (will use OLLAMA_MODEL from .env if model is None)
     try:
         converter = NLPToSQL(model=model)
     except Exception as e:
         print(f"Error initializing converter: {e}")
         return
     
-    # Check mode
-    if len(sys.argv) > 2 and sys.argv[2] == "interactive":
-        interactive_mode(converter)
+    # Run in selected mode
+    if mode == "interactive":
+        interactive_mode(converter, verbose=verbose)
     else:
-        demo_mode(converter)
+        demo_mode(converter, verbose=verbose)
         
         # Offer interactive mode
         print("\n" + "=" * 60)
         response = input("Would you like to try interactive mode? (y/n): ").strip().lower()
         if response == 'y':
-            interactive_mode(converter)
+            interactive_mode(converter, verbose=verbose)
 
 
 if __name__ == "__main__":
