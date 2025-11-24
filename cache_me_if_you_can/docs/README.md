@@ -141,6 +141,32 @@ uv run samples/weather_api_cache.py
 
 ---
 
+### 6. Stampede Prevention Demo
+
+Demonstrates distributed locking to prevent cache stampede with concurrent requests.
+
+```bash
+uv run samples/demo_stampede_prevention.py --threads 10 --cities 3
+```
+
+**What it shows:**
+- Cache stampede problem (thundering herd)
+- Distributed locking with Redis/Valkey
+- Exponential backoff for lock contention
+- Fail-fast behavior with timeouts
+- API call reduction (10 requests → 1 API call)
+
+**Key metrics:**
+- API call reduction: 90%+ for concurrent requests
+- Lock wait times and retry patterns
+- Stampede prevention success rate
+
+**Learn more:** 
+- [Stampede Prevention Concept](concepts/stampede_prevention.md)
+- [Implementation Guide](implementation/stampede_prevention_demo.md)
+
+---
+
 ## SQL Query Examples
 
 The `samples/` folder includes SQL query files organized by complexity:
@@ -158,6 +184,7 @@ These queries are used throughout the demos to show caching performance at diffe
 ### Caching Patterns
 - [Cache-Aside Pattern](CACHE_ASIDE_README.md)
 - [Write-Through Cache Pattern](WRITE_THROUGH_CACHE_README.md)
+- [Stampede Prevention](concepts/stampede_prevention.md)
 - [Caching Patterns Comparison](CACHING_PATTERNS_COMPARISON.md)
 
 ### Semantic Search & NLP

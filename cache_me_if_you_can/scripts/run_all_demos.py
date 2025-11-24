@@ -268,7 +268,9 @@ def main(
     
     5. Semantic Cache - Vector similarity caching for NLP to SQL queries
     
-    6. Multi-threaded Performance - Concurrent load testing
+    6. Stampede Prevention - Distributed locking for cache stampede
+    
+    7. Multi-threaded Performance - Concurrent load testing
     
     Enhanced features include:
     
@@ -414,7 +416,20 @@ def main(
     )
     runner.prompt_continue()
     
-    # Demo 6: Multi-threaded Performance Test
+    # Demo 6: Stampede Prevention
+    runner.run_demo(
+        name="Stampede Prevention Demo",
+        script="demo_stampede_prevention.py",
+        args=["--requests", "1000", "--threads", "4", "--cities", "3"],
+        description="Distributed locking to prevent cache stampede with concurrent requests",
+        tip="Watch how only 1 API call is made despite 1000 concurrent requests per city",
+        supports_interactive=True,
+        supports_verbose=True,
+        supports_flush=True
+    )
+    runner.prompt_continue()
+    
+    # Demo 7: Multi-threaded Performance Test
     runner.run_demo(
         name="Multi-threaded Performance Test",
         script="demo_multi_threaded_performance.py",

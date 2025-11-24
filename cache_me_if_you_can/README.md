@@ -103,6 +103,9 @@ uv run python samples/demo_weather_api_cache.py
 # Write-through cache demo
 uv run python samples/demo_write_through_cache.py
 
+# Stampede prevention demo (distributed locking)
+uv run python samples/demo_stampede_prevention.py --threads 10 --cities 3
+
 # Multi-threaded performance test
 uv run python samples/demo_multi_threaded_performance.py --users 4 --queries 10
 ```
@@ -134,6 +137,7 @@ cache_me_if_you_can/
 │   ├── demo_cache_aside.py
 │   ├── demo_weather_api_cache.py
 │   ├── demo_write_through_cache.py
+│   ├── demo_stampede_prevention.py
 │   └── demo_multi_threaded_performance.py
 ├── services/                  # Service layer
 │   └── weather_service.py    # Mock weather service

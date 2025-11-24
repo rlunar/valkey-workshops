@@ -158,6 +158,58 @@ See: [Semantic Search Documentation](../docs/semantic_search_README.md)
 
 ---
 
+### demo_stampede_prevention.py
+**Stampede Prevention Demo** - Demonstrates distributed locking to prevent cache stampede.
+
+Features:
+- Simulates concurrent requests to the same resource
+- Distributed locking with Redis/Valkey
+- Exponential backoff for lock contention
+- Fail-fast behavior with timeouts
+- Detailed metrics per thread
+- Request timeline visualization
+
+**Key concepts:**
+- **Cache Stampede**: Multiple concurrent requests for the same missing cache entry
+- **Distributed Lock**: Only one thread fetches from API, others wait
+- **Exponential Backoff**: Reduces contention with increasing delays
+- **Lock Timeout**: Prevents indefinite waiting
+
+**Usage examples:**
+```bash
+# Basic test: 10 concurrent threads, 3 cities
+uv run samples/demo_stampede_prevention.py
+
+# High concurrency test
+uv run samples/demo_stampede_prevention.py --threads 20 --cities 5
+
+# Verbose mode with thread-level details
+uv run samples/demo_stampede_prevention.py --verbose --threads 15
+
+# Interactive mode with step-by-step execution
+uv run samples/demo_stampede_prevention.py --interactive --verbose
+
+# Flush cache before running
+uv run samples/demo_stampede_prevention.py --flush --threads 10
+```
+
+**Metrics captured:**
+- Total requests vs API calls (should be 1:N ratio)
+- Cache hit/miss rates
+- Lock acquisitions and waits
+- Average wait time for lock contention
+- Request timeline with status per thread
+- Stampede prevention success rate
+
+**Use cases:**
+- High-traffic scenarios (major cities, popular products)
+- Preventing API rate limit exhaustion
+- Cost optimization (reducing unnecessary API calls)
+- System stability under concurrent load
+- Demonstrating distributed locking patterns
+
+---
+
 ### multi_threaded_performance_test.py
 **Multi-threaded Performance Testing** - Benchmark database and cache performance under concurrent load.
 

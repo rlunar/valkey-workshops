@@ -47,7 +47,8 @@ if [ "$1" == "--help" ] || [ "$1" == "-h" ]; then
     echo "  3. Write-Behind Cache        - Asynchronous write with queue"
     echo "  4. Weather API Cache         - Real-world API caching with emojis"
     echo "  5. Semantic Search           - Vector similarity search"
-    echo "  6. Multi-threaded Performance - Concurrent load testing"
+    echo "  6. Stampede Prevention       - Distributed locking for cache stampede"
+    echo "  7. Multi-threaded Performance - Concurrent load testing"
     echo ""
     echo -e "${CYAN}Enhanced features:${NC}"
     echo "  • Rich terminal formatting with colors and tables"
@@ -171,15 +172,18 @@ else
 fi
 prompt_continue
 
-# Demo 6: NLP to SQL
-# TOTAL_DEMOS=$((TOTAL_DEMOS + 1))
-# echo -e "${YELLOW}Note: NLP to SQL demo requires Ollama to be running${NC}"
-# if run_demo "NLP to SQL Demo" "demo_nlp_to_sql.py"; then
-#     SUCCESSFUL_DEMOS=$((SUCCESSFUL_DEMOS + 1))
-# else
-#     FAILED_DEMOS=$((FAILED_DEMOS + 1))
-# fi
-# prompt_continue
+# Demo 6: Stampede Prevention
+TOTAL_DEMOS=$((TOTAL_DEMOS + 1))
+echo -e "${YELLOW}Running Stampede Prevention demo with 1000 concurrent requests per city${NC}"
+echo -e "${YELLOW}Demonstrates distributed locking to prevent cache stampede${NC}"
+if run_demo "Stampede Prevention Demo" "demo_stampede_prevention.py" "--requests 1000 --threads 4 --cities 3"; then
+    SUCCESSFUL_DEMOS=$((SUCCESSFUL_DEMOS + 1))
+else
+    FAILED_DEMOS=$((FAILED_DEMOS + 1))
+fi
+echo -e "${BLUE}💡 Tip: Watch how only 1 API call is made despite 1000 concurrent requests${NC}"
+echo -e "${BLUE}   Example: uv run samples/demo_stampede_prevention.py -v -r 2000 -t 8 -c 5${NC}"
+prompt_continue
 
 # Demo 7: Multi-threaded Performance Test
 TOTAL_DEMOS=$((TOTAL_DEMOS + 1))
