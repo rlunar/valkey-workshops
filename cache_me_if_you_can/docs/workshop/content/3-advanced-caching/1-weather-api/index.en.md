@@ -9,8 +9,8 @@ Learn to use Valkey to cache external API responses, reducing both latency and c
 - Cache external API responses effectively using cache-aside pattern
 - Reduce API call costs by up to 99%
 - Improve response times from 400-600ms to sub-millisecond
-- Handle multiple cities and countries with distributed locking
-- Prevent cache stampede with proper synchronization
+- Handle multiple cities and countries efficiently
+- Understand TTL configuration for data freshness
 
 ## Use Case
 
@@ -30,15 +30,14 @@ External API calls introduce several challenges:
 - **Rate Limits**: APIs often limit the number of requests per time period
 - **Reliability**: External services may be slow or temporarily unavailable
 
-## The Solution: Cache-Aside with Distributed Locking
+## The Solution: Cache-Aside Pattern
 
-The implementation uses cache-aside pattern with distributed locking to prevent cache stampede:
+The implementation uses the cache-aside pattern to optimize API calls:
 
 1. **Check Cache First**: Before calling the API, check if the data exists in cache
-2. **Cache Miss**: If not cached, acquire a distributed lock
-3. **Call API**: Fetch data from OpenWeatherMap API
-4. **Store in Cache**: Save the API response with TTL (15 minutes default)
-5. **Cache Hit**: Subsequent requests return data from cache instantly
+2. **Cache Miss**: If not cached, call the external API
+3. **Store in Cache**: Save the API response with TTL (15 minutes default)
+4. **Cache Hit**: Subsequent requests return data from cache instantly
 
 ### Flow Diagram
 
@@ -46,22 +45,17 @@ The implementation uses cache-aside pattern with distributed locking to prevent 
 sequenceDiagram
     participant App as Application
     participant Cache as Valkey Cache
-    participant Lock as Distributed Lock
     participant API as OpenWeatherMap API
     
     rect rgb(255, 243, 205)
     Note over App,API: First Request - Cache Miss
     App->>Cache: GET weather:in:400001
     Cache-->>App: (nil) - Cache Miss
-    App->>Lock: ACQUIRE lock:weather:in:400001
-    Lock-->>App: ✓ Lock Acquired
     App->>API: GET /weather?zip=400001,in
     Note over API: External API Call<br/>~640ms
     API-->>App: Weather Data (JSON)
     App->>Cache: SETEX weather:in:400001 900 [data]
     Cache-->>App: ✓ OK
-    App->>Lock: RELEASE lock:weather:in:400001
-    Lock-->>App: ✓ Released
     App-->>App: Return weather data
     Note over App: Total: ~640ms
     end
@@ -108,6 +102,12 @@ Run the demo in interactive mode with verbose output:
 
 :::code{showCopyAction=true showLineNumbers=true language=bash}
 uv run samples/demo_weather_api_cache.py -i -f -v
+:::
+
+Run the demo a couple more times without flushing the cache to see performance benefits for previously seen cities:
+
+:::code{showCopyAction=true showLineNumbers=true language=bash}
+uv run samples/demo_weather_api_cache.py -i
 :::
 
 ### Demo Configuration
@@ -308,24 +308,16 @@ The Time-To-Live determines how long data stays cached:
 | **30 minutes** | General weather info | Balanced approach |
 | **60 minutes** | Weather trends/history | Fewer API calls, older data |
 
-## Distributed Locking
-
-The implementation uses distributed locking to prevent **cache stampede** (multiple simultaneous requests for the same uncached data):
-
-1. When a cache miss occurs, acquire a lock for that cache key
-2. Other requests wait for the lock holder to populate the cache
-3. Once populated, all waiting requests get the cached data
-4. This prevents duplicate API calls and reduces load
-
 ## Key Takeaways
 
 - **Dramatic Performance Improvement**: 212.7x faster response times with cache hits
 - **Cost Reduction**: Up to 99.97% reduction in API calls
-- **Distributed Locking**: Prevents cache stampede and duplicate API calls
+- **Cache-Aside Pattern**: Simple and effective for external API caching
 - **Configurable TTL**: Balance between data freshness and performance (15-60 minutes)
 - **Lazy Loading**: Cache is populated on-demand, not proactively
 - **Resilience**: Application continues working even if cache fails (falls back to API)
 - **Real-time Data**: Weather includes temperature, conditions, and emoji visualization
+- **Structured Keys**: `weather:<country>:<zip>` format ensures uniqueness and readability
 
 ## When to Use This Pattern
 
