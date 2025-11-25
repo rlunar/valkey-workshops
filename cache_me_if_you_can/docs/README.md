@@ -475,7 +475,17 @@ Demonstrate a simple application using Valkey as the session store for Flask.
 
 ```bash
 # Run the session demo
-uv run streamlit run session_demo/app.py
+FLASK_APP=session_demo/app.py uv run flask run --port 5001
+```
+
+Find a passenger passport using SQL:
+
+```sql
+SELECT * FROM passenger 
+WHERE passenger_id >= (
+    SELECT FLOOR(RAND() * (SELECT MAX(passenger_id) FROM passenger))
+)
+LIMIT 10;
 ```
 
 **What it demonstrates:**
