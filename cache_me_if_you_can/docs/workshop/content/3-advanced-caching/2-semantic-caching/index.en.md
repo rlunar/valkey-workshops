@@ -135,7 +135,7 @@ Let's see the options available in the script:
 uv run samples/demo_semantic_cache.py --help
 ```
 
-Expected Output
+Expected Output:
 
 ```bash
  Usage: demo_semantic_cache.py [OPTIONS]
