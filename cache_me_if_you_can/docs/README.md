@@ -88,7 +88,7 @@ Start by understanding the sample application and seeing caching benefits visual
 
 ```bash
 # Launch the Airport App (Streamlit UI)
-streamlit run airport_app.py
+uv run streamlit run airport_app.py
 ```
 
 **What to explore:**
