@@ -449,7 +449,7 @@ Demonstrate the substantial difference between analytical queries in RDBMS vs. V
 
 ```bash
 # Run the airport leaderboard demo
-uv run samples/demo_airport_leaderboard.py
+uv run samples/demo_airport_leaderboard.py --help
 
 # With verbose output
 uv run samples/demo_airport_leaderboard.py --verbose
