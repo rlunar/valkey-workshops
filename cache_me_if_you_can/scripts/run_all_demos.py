@@ -42,6 +42,8 @@ console = Console()
 SCRIPT_DIR = Path(__file__).parent
 PROJECT_ROOT = SCRIPT_DIR.parent
 SAMPLES_DIR = PROJECT_ROOT / "samples"
+CORE_DIR = PROJECT_ROOT / "core"
+DAOS_DIR = PROJECT_ROOT / "daos"
 
 
 class DemoRunner:
@@ -63,53 +65,83 @@ class DemoRunner:
         self.failed_demos = 0
         self.results = []
     
-    def run_demo(
+    def discover_scripts(self) -> list[dict]:
+        """Discover all runnable Python scripts in core, daos, and samples folders."""
+        scripts = []
+        
+        # Scripts to exclude (utilities, not demos)
+        exclude_scripts = {"plot_time_series.py"}
+        
+        # Discover scripts in each folder
+        for folder_name, folder_path in [
+            ("core", CORE_DIR),
+            ("daos", DAOS_DIR),
+            ("samples", SAMPLES_DIR)
+        ]:
+            if not folder_path.exists():
+                continue
+            
+            # Find all .py files excluding __init__.py and __pycache__
+            for script_path in sorted(folder_path.glob("*.py")):
+                if script_path.name.startswith("__") or script_path.name in exclude_scripts:
+                    continue
+                
+                # Determine if it's a demo or module
+                is_demo = script_path.name.startswith("demo_") or folder_name == "samples"
+                
+                scripts.append({
+                    "name": script_path.stem.replace("_", " ").title(),
+                    "path": script_path,
+                    "folder": folder_name,
+                    "is_demo": is_demo,
+                    "relative_path": script_path.relative_to(PROJECT_ROOT)
+                })
+        
+        return scripts
+    
+    def run_script(
         self,
-        name: str,
-        script: str,
-        args: Optional[list] = None,
-        description: Optional[str] = None,
-        tip: Optional[str] = None,
-        supports_interactive: bool = False,
-        supports_verbose: bool = False,
-        supports_flush: bool = False
+        script_info: dict,
+        args: Optional[list] = None
     ) -> bool:
-        """Run a single demo and track results."""
+        """Run a single script and track results."""
         self.total_demos += 1
         
-        # Print demo header
+        name = script_info["name"]
+        script_path = script_info["path"]
+        folder = script_info["folder"]
+        
+        # Print script header
         console.print()
         console.print(Panel(
-            f"[bold cyan]{name}[/bold cyan]",
+            f"[bold cyan]{name}[/bold cyan]\n"
+            f"[dim]{folder}/{script_path.name}[/dim]",
             border_style="cyan",
             box=box.DOUBLE
         ))
         
-        if description:
-            console.print(f"[dim]{description}[/dim]")
-        
-        # Check if demo file exists
-        demo_path = SAMPLES_DIR / script
-        if not demo_path.exists():
-            console.print(f"[red]✗ Demo file not found: {script}[/red]")
+        # Check if script file exists
+        if not script_path.exists():
+            console.print(f"[red]✗ Script file not found: {script_path}[/red]")
             self.failed_demos += 1
             self.results.append({"name": name, "status": "failed", "reason": "File not found"})
             return False
         
         # Build command
-        cmd = ["uv", "run", str(demo_path)]
+        cmd = ["uv", "run", str(script_path)]
         if args:
             cmd.extend(args)
         
-        # Add global flags if supported by the demo
-        if self.interactive and supports_interactive:
-            cmd.append("--interactive")
-        if self.verbose and supports_verbose:
-            cmd.append("--verbose")
-        if self.flush and supports_flush:
-            cmd.append("--flush")
+        # Add global flags for demo scripts
+        if script_info["is_demo"]:
+            if self.interactive and "--interactive" not in cmd:
+                cmd.append("--interactive")
+            if self.verbose and "--verbose" not in cmd:
+                cmd.append("--verbose")
+            if self.flush and "--flush" not in cmd:
+                cmd.append("--flush")
         
-        # Run demo with progress indicator
+        # Run script with progress indicator
         try:
             with Progress(
                 SpinnerColumn(),
@@ -132,11 +164,6 @@ class DemoRunner:
                 console.print(f"[green]✓ {name} completed successfully[/green]")
                 self.successful_demos += 1
                 self.results.append({"name": name, "status": "success"})
-                
-                # Show tip if provided
-                if tip:
-                    console.print(f"[blue]💡 Tip:[/blue] [dim]{tip}[/dim]")
-                
                 return True
             else:
                 console.print(f"[red]✗ {name} failed with exit code {result.returncode}[/red]")
@@ -157,6 +184,50 @@ class DemoRunner:
             if not Confirm.ask("[dim]Continue to next demo?[/dim]", default=True):
                 console.print("[yellow]⚠ Demo execution stopped by user[/yellow]")
                 sys.exit(0)
+    
+    def plot_latest_performance_log(self):
+        """Find and plot the latest performance test log file."""
+        logs_dir = PROJECT_ROOT / "logs"
+        
+        if not logs_dir.exists():
+            console.print("[dim]No logs directory found, skipping visualization[/dim]")
+            return
+        
+        # Find the most recent perf_test_*.json file
+        log_files = sorted(logs_dir.glob("perf_test_*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+        
+        if not log_files:
+            console.print("[dim]No performance test logs found, skipping visualization[/dim]")
+            return
+        
+        latest_log = log_files[0]
+        
+        console.print()
+        console.print(Panel(
+            f"[bold cyan]Visualizing Performance Results[/bold cyan]\n"
+            f"[dim]Log file: {latest_log.name}[/dim]",
+            border_style="cyan",
+            box=box.DOUBLE
+        ))
+        
+        # Run plot_time_series.py with plot-only command
+        plot_script = SAMPLES_DIR / "plot_time_series.py"
+        cmd = ["uv", "run", str(plot_script), "plot-only", str(latest_log)]
+        
+        try:
+            result = subprocess.run(
+                cmd,
+                cwd=PROJECT_ROOT,
+                capture_output=False,
+                text=True
+            )
+            
+            if result.returncode == 0:
+                console.print(f"[green]✓ Performance visualization completed[/green]")
+            else:
+                console.print(f"[yellow]⚠ Visualization failed with exit code {result.returncode}[/yellow]")
+        except Exception as e:
+            console.print(f"[yellow]⚠ Could not visualize results: {e}[/yellow]")
     
     def print_summary(self):
         """Print execution summary."""
@@ -232,7 +303,7 @@ def main(
         False,
         "--skip-prompts",
         "-y",
-        help="Run all demos without pausing between them"
+        help="Run all scripts without pausing between them"
     ),
     interactive: bool = typer.Option(
         False,
@@ -251,28 +322,28 @@ def main(
         "--flush",
         "-f",
         help="Flush cache before running demos"
+    ),
+    list_scripts: bool = typer.Option(
+        False,
+        "--list",
+        "-l",
+        help="List all discovered scripts and exit"
     )
 ):
     """
-    Run all cache pattern demonstrations sequentially.
+    Run all Python scripts in core, daos, and samples folders sequentially.
     
-    This script runs the following demos:
+    This script automatically discovers and runs all Python scripts in:
     
-    1. Cache-Aside Pattern - Read-through caching with lazy loading
+    • core/ - Core functionality modules
     
-    2. Write-Through Cache - Synchronous write to DB and cache
+    • daos/ - Data Access Object implementations
     
-    3. Write-Behind Cache - Asynchronous write with queue
-    
-    4. Weather API Cache - Real-world API caching with emojis
-    
-    5. Semantic Cache - Vector similarity caching for NLP to SQL queries
-    
-    6. Stampede Prevention - Distributed locking for cache stampede
-    
-    7. Multi-threaded Performance - Concurrent load testing
+    • samples/ - Demo and example scripts
     
     Enhanced features include:
+    
+    • Automatic script discovery
     
     • Rich terminal formatting with colors and tables
     
@@ -286,7 +357,10 @@ def main(
     
     Examples:
     
-        # Run all demos interactively
+        # List all discovered scripts
+        python scripts/run_all_demos.py --list
+        
+        # Run all scripts interactively
         python scripts/run_all_demos.py
         
         # Skip prompts (non-interactive)
@@ -303,17 +377,62 @@ def main(
         
         # Combine all flags
         python scripts/run_all_demos.py --skip-prompts --verbose --flush
-        
-        # Individual demos
-        uv run samples/demo_weather_api_cache.py -v -c 5
-        uv run samples/demo_multi_threaded_performance.py --threads 8 --queries 5000
     """
+    
+    # Initialize runner
+    runner = DemoRunner(
+        skip_prompts=skip_prompts,
+        interactive=interactive,
+        verbose=verbose,
+        flush=flush
+    )
+    
+    # Discover all scripts
+    scripts = runner.discover_scripts()
+    
+    if not scripts:
+        console.print()
+        console.print(Panel(
+            "[bold red]✗ Error: No scripts found[/bold red]\n\n"
+            "No Python scripts were discovered in core/, daos/, or samples/ folders.",
+            border_style="red",
+            box=box.ROUNDED
+        ))
+        sys.exit(1)
+    
+    # If --list flag, show scripts and exit
+    if list_scripts:
+        console.print()
+        console.print(Panel.fit(
+            "[bold cyan]Discovered Scripts[/bold cyan]",
+            border_style="cyan",
+            box=box.DOUBLE
+        ))
+        
+        scripts_table = Table(box=box.ROUNDED)
+        scripts_table.add_column("#", style="dim", width=4)
+        scripts_table.add_column("Folder", style="cyan")
+        scripts_table.add_column("Script", style="white")
+        scripts_table.add_column("Type", style="yellow")
+        
+        for idx, script in enumerate(scripts, 1):
+            script_type = "Demo" if script["is_demo"] else "Module"
+            scripts_table.add_row(
+                str(idx),
+                script["folder"],
+                script["path"].name,
+                script_type
+            )
+        
+        console.print(scripts_table)
+        console.print(f"\n[cyan]Total scripts found:[/cyan] {len(scripts)}")
+        sys.exit(0)
     
     # Print header
     console.print()
     console.print(Panel.fit(
-        "[bold cyan]Running All Cache Pattern Demos[/bold cyan]\n"
-        "[yellow]Enhanced with Rich formatting, emojis, and interactive modes[/yellow]",
+        "[bold cyan]Running All Scripts[/bold cyan]\n"
+        f"[yellow]Found {len(scripts)} scripts in core/, daos/, and samples/ folders[/yellow]",
         border_style="cyan",
         box=box.DOUBLE
     ))
@@ -347,99 +466,28 @@ def main(
         
         console.print(flags_table)
     
-    # Initialize runner
-    runner = DemoRunner(
-        skip_prompts=skip_prompts,
-        interactive=interactive,
-        verbose=verbose,
-        flush=flush
-    )
-    
-    # Demo 1: Cache-Aside Pattern
-    runner.run_demo(
-        name="Cache-Aside Pattern Demo",
-        script="demo_cache_aside.py",
-        description="Demonstrates read-through caching with lazy loading",
-        tip="Try with --interactive and --verbose flags for detailed output",
-        supports_interactive=True,
-        supports_verbose=True,
-        supports_flush=False
-    )
-    runner.prompt_continue()
-    
-    # Demo 2: Write-Through Cache Pattern
-    runner.run_demo(
-        name="Write-Through Cache Pattern Demo",
-        script="demo_write_through_cache.py",
-        description="Shows synchronous writes to both database and cache",
-        tip="Watch for consistency verification between DB and cache",
-        supports_interactive=True,
-        supports_verbose=True,
-        supports_flush=False
-    )
-    runner.prompt_continue()
-    
-    # Demo 3: Write-Behind Cache Pattern
-    runner.run_demo(
-        name="Write-Behind Cache Pattern Demo",
-        script="demo_write_behind_cache.py",
-        description="Demonstrates asynchronous writes with queue processing",
-        tip="Observe the queue monitoring and batch processing",
-        supports_interactive=True,
-        supports_verbose=True,
-        supports_flush=False
-    )
-    runner.prompt_continue()
-    
-    # Demo 4: Weather API Cache
-    runner.run_demo(
-        name="Weather API Cache Demo",
-        script="demo_weather_api_cache.py",
-        args=["--cities", "5", "--ttl", "15"],
-        description="Real-world API caching with country flags 🇺🇸 🇲🇽 🇬🇧 and weather emojis ☀️ 🌧️ ⛅",
-        tip="Run with --verbose to see cache keys and syntax-highlighted JSON samples",
-        supports_interactive=True,
-        supports_verbose=True,
-        supports_flush=True
-    )
-    runner.prompt_continue()
-    
-    # Demo 5: Semantic Cache
-    runner.run_demo(
-        name="Semantic Cache Pattern Demo",
-        script="demo_semantic_cache.py",
-        description="Vector similarity caching for natural language SQL queries with embeddings",
-        tip="Watch for semantic cache hits on similar queries - saves LLM tokens and latency",
-        supports_interactive=True,
-        supports_verbose=True,
-        supports_flush=True
-    )
-    runner.prompt_continue()
-    
-    # Demo 6: Stampede Prevention
-    runner.run_demo(
-        name="Stampede Prevention Demo",
-        script="demo_stampede_prevention.py",
-        args=["--requests", "1000", "--threads", "4", "--cities", "3"],
-        description="Distributed locking to prevent cache stampede with concurrent requests",
-        tip="Watch how only 1 API call is made despite 1000 concurrent requests per city",
-        supports_interactive=True,
-        supports_verbose=True,
-        supports_flush=True
-    )
-    runner.prompt_continue()
-    
-    # Demo 7: Multi-threaded Performance Test
-    runner.run_demo(
-        name="Multi-threaded Performance Test",
-        script="demo_multi_threaded_performance.py",
-        args=["--threads", "4", "--queries", "1000"],
-        description="Tests cache performance under concurrent load (4 threads, 1000 queries each)",
-        tip="Results saved to logs/ directory. View with: uv run samples/plot_time_series.py logs/perf_test_*.json",
-        supports_interactive=False,
-        supports_verbose=False,
-        supports_flush=False
-    )
+    # Run all discovered scripts
+    for idx, script in enumerate(scripts, 1):
+        console.print(f"\n[dim]Script {idx} of {len(scripts)}[/dim]")
+        
+        # Add specific args for certain demos
+        args = None
+        if script["path"].name == "demo_weather_api_cache.py":
+            args = ["--cities", "5", "--ttl", "15"]
+        elif script["path"].name == "demo_stampede_prevention.py":
+            args = ["--requests", "1000", "--threads", "4", "--cities", "3"]
+        elif script["path"].name == "demo_multi_threaded_performance.py":
+            args = ["--threads", "4", "--queries", "1000"]
+        
+        success = runner.run_script(script, args=args)
+        
+        # After multi-threaded performance test, visualize the results
+        if success and script["path"].name == "demo_multi_threaded_performance.py":
+            runner.plot_latest_performance_log()
+        
+        # Prompt to continue if not last script
+        if idx < len(scripts):
+            runner.prompt_continue()
     
     # Print summary
     runner.print_summary()
