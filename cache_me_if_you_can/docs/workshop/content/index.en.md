@@ -2,7 +2,7 @@
 
 ## Workshop Overview
 
-This hands-on workshop explores practical caching with Valkey through three key use cases: database query optimization, session management, and real-time leaderboards. Participants will learn to cache expensive database operations, external API calls, and JSON configurations while building scalable session storage and dynamic leaderboards.
+This hands-on workshop explores practical caching with Valkey through five key use cases: database query optimization, api caching, semantic caching, session management, and real-time leaderboards. Participants will learn to cache expensive database operations, external API calls, and JSON configurations while building scalable session storage and dynamic leaderboards.
 
 Beyond implementation, the workshop emphasizes critical caching challenges including cache invalidation, stampede prevention, memory management, and data consistency. Attendees will experience common pitfalls firsthand and learn proven strategies for cache warming, TTL optimization, and production monitoring.
 

@@ -39,8 +39,8 @@ def fetch_flight_db(flight_id):
             'On Time' as status
         FROM flight f
         JOIN airline a ON f.airline_id = a.airline_id
-        JOIN airport af ON f.from = af.airport_id
-        JOIN airport at ON f.to = at.airport_id
+        JOIN airport af ON f.`from` = af.airport_id
+        JOIN airport at ON f.`to` = at.airport_id
         WHERE f.flight_id = :flight_id
     """)
     
@@ -115,8 +115,8 @@ def fetch_passenger_flights_db(passport_no):
             p.passportno
         FROM booking b
         JOIN flight f ON b.flight_id = f.flight_id
-        JOIN airport dep_airport ON f.from = dep_airport.airport_id
-        JOIN airport arr_airport ON f.to = arr_airport.airport_id
+        JOIN airport dep_airport ON f.`from` = dep_airport.airport_id
+        JOIN airport arr_airport ON f.`to` = arr_airport.airport_id
         JOIN airline al ON f.airline_id = al.airline_id
         JOIN airplane ap ON f.airplane_id = ap.airplane_id
         JOIN airplane_type at ON ap.type_id = at.type_id
