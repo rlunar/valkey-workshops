@@ -475,7 +475,7 @@ Demonstrate a simple application using Valkey as the session store for Flask.
 
 ```bash
 # Run the session demo
-streamlit run session_demo/app.py
+uv run streamlit run session_demo/app.py
 ```
 
 **What it demonstrates:**
