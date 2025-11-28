@@ -6,45 +6,67 @@
 set -e
 
 DB_NAME="flughafendb_large"
-MARIADB_PORT=3307
+MARIADB_PORT=3308
 DATA_DIR="data"
 
 # Check if a specific file was provided as argument
 if [ $# -eq 1 ]; then
-  COMPRESSED_FILE="$1"
+  LATEST_DUMP="$1"
 else
-  # Find the most recent compressed dump file
-  COMPRESSED_FILE=$(ls -t ${DATA_DIR}/${DB_NAME}_*.sql.gz 2>/dev/null | head -n 1)
-fi
+  # Find latest SQL dump or create new one
+  LATEST_DUMP=$(ls -t data/*.sql.gz 2>/dev/null | head -1)
 
-if [ -z "${COMPRESSED_FILE}" ] || [ ! -f "${COMPRESSED_FILE}" ]; then
-  echo "Error: No dump file found in ${DATA_DIR}/"
-  echo "Usage: $0 [path/to/dump.sql.gz]"
-  exit 1
+  if [ -z "$LATEST_DUMP" ]; then
+      echo "No SQL dump found. Creating new dump..."
+      ./scripts/dump_mariadb.sh
+      LATEST_DUMP=$(ls -t data/*.sql.gz | head -1)
+  fi
 fi
 
 echo "Starting MariaDB database import..."
 echo "Database: ${DB_NAME}"
 echo "Port: ${MARIADB_PORT}"
-echo "Source file: ${COMPRESSED_FILE}"
+echo "Source file: ${LATEST_DUMP}"
 
 # Create database if it doesn't exist
 echo "Creating database if not exists..."
-mysql \
+mariadb \
   --host=127.0.0.1 \
   --port=${MARIADB_PORT} \
   --user=root \
   --password \
   -e "CREATE DATABASE IF NOT EXISTS ${DB_NAME};"
 
-# Import the compressed dump
-echo "Importing database..."
-gunzip -c "${COMPRESSED_FILE}" | mysql \
-  --host=127.0.0.1 \
-  --port=${MARIADB_PORT} \
-  --user=root \
-  --password \
-  "${DB_NAME}"
+# Extract SQL file
+echo "Extracting SQL file..."
+SQL_FILE="${DATA_DIR}/temp_import.sql"
+gunzip -c "${LATEST_DUMP}" > "${SQL_FILE}"
 
-echo "Import completed successfully!"
-echo "Database ${DB_NAME} is now available on MariaDB port ${MARIADB_PORT}"
+# Import in background with progress monitoring
+echo "Importing database in background..."
+LOG_FILE="${DATA_DIR}/import.log"
+PID_FILE="${DATA_DIR}/import.pid"
+
+(
+  mariadb \
+    --host=127.0.0.1 \
+    --port=${MARIADB_PORT} \
+    --user=root \
+    --password \
+    "${DB_NAME}" < "${SQL_FILE}" > "${LOG_FILE}" 2>&1
+  
+  EXIT_CODE=$?
+  if [ $EXIT_CODE -eq 0 ]; then
+    echo "[$(date)] Import completed successfully" >> "${LOG_FILE}"
+    rm -f "${SQL_FILE}" "${PID_FILE}"
+  else
+    echo "[$(date)] Import failed with exit code $EXIT_CODE" >> "${LOG_FILE}"
+  fi
+) &
+
+IMPORT_PID=$!
+echo $IMPORT_PID > "${PID_FILE}"
+
+echo "Import started with PID: ${IMPORT_PID}"
+echo "Monitor: tail -f ${LOG_FILE}"
+echo "Status: ps -p ${IMPORT_PID} || echo 'Import complete'"
