@@ -1,0 +1,38 @@
+[project]
+name = "cache-me-if-you-can"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "cryptography>=46.0.3",
+    "dotenv>=0.9.9",
+    "flask>=3.1.2",
+    "flask-session>=0.8.0",
+    "mysql-connector-python>=9.5.0",
+    "numpy>=2.2.5",
+    "pandas>=2.3.3",
+    "plotext>=5.3.2",
+    "plotly>=6.5.0",
+    "psycopg2-binary>=2.9.11",
+    "pymemcache>=4.0.0",
+    "pymysql>=1.1.2",
+    "python-dotenv>=1.2.1",
+    "redis>=7.1.0",
+    "requests>=2.32.5",
+    "rich>=14.2.0",
+    "sentence-transformers>=3.3.1",
+    "sqlalchemy>=2.0.44",
+    "sqlmodel>=0.0.27",
+    "sqlparse>=0.5.0",
+    "streamlit>=1.51.0",
+    "tabulate>=0.9.0",
+    "termgraph>=0.7.4",
+    "tqdm>=4.67.1",
+    "typer>=0.15.1",
+    "valkey[libvalkey]>=6.1.1",
+    "watchdog>=6.0.0",
+]
+
+[project.scripts]
+session-demo = "session_demo.app:app"

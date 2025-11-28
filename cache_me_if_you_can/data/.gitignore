@@ -1,0 +1,4 @@
+*.sql
+*.zip
+*.gz
+flughafendb_mariadb/

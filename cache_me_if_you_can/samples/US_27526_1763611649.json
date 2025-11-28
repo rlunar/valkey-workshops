@@ -1,0 +1,46 @@
+{
+  "coord": {
+    "lon": -78.7811,
+    "lat": 35.7796
+  },
+  "weather": [
+    {
+      "id": 800,
+      "main": "Clear",
+      "description": "clear sky",
+      "icon": "01d"
+    }
+  ],
+  "base": "stations",
+  "main": {
+    "temp": 72.5,
+    "feels_like": 71.8,
+    "temp_min": 68.2,
+    "temp_max": 76.3,
+    "pressure": 1015,
+    "humidity": 65,
+    "sea_level": 1015,
+    "grnd_level": 1012
+  },
+  "visibility": 10000,
+  "wind": {
+    "speed": 8.5,
+    "deg": 180,
+    "gust": 12.3
+  },
+  "clouds": {
+    "all": 5
+  },
+  "dt": 1763611649,
+  "sys": {
+    "type": 2,
+    "id": 2001122,
+    "country": "US",
+    "sunrise": 1763582400,
+    "sunset": 1763620800
+  },
+  "timezone": -18000,
+  "id": 4464368,
+  "name": "Raleigh",
+  "cod": 200
+}
