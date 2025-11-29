@@ -48,6 +48,6 @@
     <p style="color: #666;">No flights available for today.</p>
     {% endif %}
     
-    <a href="{{ url_for('index') }}" class="btn btn-secondary" style="margin-top: 15px;">Back to Dashboard</a>
+    <a href="{{ url_prefix }}{{ url_for('index') }}" class="btn btn-secondary" style="margin-top: 15px;">Back to Dashboard</a>
 </div>
 {% endblock %}

@@ -17,9 +17,17 @@ root_dir = Path(__file__).parent.parent
 env_path = root_dir / '.env'
 load_dotenv(dotenv_path=env_path)
 
+# Get URL prefix from environment
+URL_PREFIX = os.getenv('URL_PREFIX', '/proxy/5001')
+
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "dev-secret-key-change-in-production")
 app.config["JSON_AS_ASCII"] = False
+
+# Make URL prefix available in all templates
+@app.context_processor
+def inject_url_prefix():
+    return {'url_prefix': URL_PREFIX}
 
 # Configure Valkey (Redis-compatible) session storage
 app.config["SESSION_TYPE"] = "redis"

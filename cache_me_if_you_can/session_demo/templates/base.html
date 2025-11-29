@@ -236,10 +236,10 @@
             </div>
             <nav>
                 {% if session.passenger_id %}
-                    <a href="{{ url_for('index') }}">Dashboard</a>
-                    <a href="{{ url_for('weather') }}">Weather</a>
-                    <a href="{{ url_for('flights') }}">Flights</a>
-                    <a href="{{ url_for('logout') }}">Logout</a>
+                    <a href="{{ url_prefix }}{{ url_for('index') }}">Dashboard</a>
+                    <a href="{{ url_prefix }}{{ url_for('weather') }}">Weather</a>
+                    <a href="{{ url_prefix }}{{ url_for('flights') }}">Flights</a>
+                    <a href="{{ url_prefix }}{{ url_for('logout') }}">Logout</a>
                 {% endif %}
             </nav>
         </header>

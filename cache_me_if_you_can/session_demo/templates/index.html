@@ -50,13 +50,13 @@
             <span class="info-value">{{ session.weather.wind_speed }} mph</span>
         </div>
     </div>
-    <a href="{{ url_for('weather') }}" class="btn" style="margin-top: 15px;">Update Weather</a>
+    <a href="{{ url_prefix }}{{ url_for('weather') }}" class="btn" style="margin-top: 15px;">Update Weather</a>
 </div>
 {% else %}
 <div class="card">
     <h3>🌤️ Weather Information</h3>
     <p style="color: #666; margin-bottom: 15px;">No weather information added yet.</p>
-    <a href="{{ url_for('weather') }}" class="btn">Add Weather Info</a>
+    <a href="{{ url_prefix }}{{ url_for('weather') }}" class="btn">Add Weather Info</a>
 </div>
 {% endif %}
 
@@ -85,7 +85,7 @@
                 <td>{{ flight.arrival }}</td>
                 <td>{{ flight.airline }}</td>
                 <td>
-                    <a href="{{ url_for('remove_flight', flight_id=flight.flight_id) }}" 
+                    <a href="{{ url_prefix }}{{ url_for('remove_flight', flight_id=flight.flight_id) }}" 
                        class="btn btn-danger" style="padding: 5px 10px; font-size: 12px;">Remove</a>
                 </td>
             </tr>
@@ -95,7 +95,7 @@
     {% else %}
     <p style="color: #666; margin-bottom: 15px;">No flights added yet.</p>
     {% endif %}
-    <a href="{{ url_for('flights') }}" class="btn">Find Flights</a>
+    <a href="{{ url_prefix }}{{ url_for('flights') }}" class="btn">Find Flights</a>
 </div>
 
 <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #ddd;">
