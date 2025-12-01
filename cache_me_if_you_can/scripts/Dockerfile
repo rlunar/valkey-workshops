@@ -40,6 +40,17 @@ RUN mkdir -p $BAKED_DATADIR && \
     rm /tmp/flughafendb_dump.sql.gz
 
 # Configure MariaDB to read from the baked directory and bind to all interfaces
-RUN echo "[mysqld]\ndatadir=$BAKED_DATADIR\nbind-address=0.0.0.0" > /etc/mysql/conf.d/baked_data.cnf
+# Add performance tuning for better query performance
+RUN echo "[mysqld]\n\
+datadir=$BAKED_DATADIR\n\
+bind-address=0.0.0.0\n\
+# Performance tuning\n\
+innodb_buffer_pool_size=1G\n\
+innodb_log_file_size=256M\n\
+innodb_flush_log_at_trx_commit=2\n\
+innodb_flush_method=O_DIRECT\n\
+max_connections=200\n\
+query_cache_size=0\n\
+query_cache_type=0" > /etc/mysql/conf.d/baked_data.cnf
 
 CMD ["mysqld"]

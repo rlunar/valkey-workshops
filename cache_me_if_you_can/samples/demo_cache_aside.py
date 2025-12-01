@@ -321,35 +321,35 @@ def demo_advanced_queries(cache: CacheAside):
     
     # Query 10: Recent bookings with passenger details and geographic information
     query_10 = """
-        SELECT 
-            b.booking_id,
-            b.seat,
-            b.price,
-            p.firstname,
-            p.lastname,
-            pd.country as passenger_country,
-            pd.city as passenger_city,
-            f.flightno,
-            f.departure,
-            f.arrival,
-            a_from.name as departure_airport,
-            ag_from.city as departure_city,
-            ag_from.country as departure_country,
-            a_to.name as arrival_airport,
-            ag_to.city as arrival_city,
-            ag_to.country as arrival_country,
-            al.airlinename
-        FROM booking b
-        INNER JOIN passenger p ON b.passenger_id = p.passenger_id
-        LEFT JOIN passengerdetails pd ON p.passenger_id = pd.passenger_id
-        INNER JOIN flight f ON b.flight_id = f.flight_id
-        INNER JOIN airport a_from ON f.`from` = a_from.airport_id
-        INNER JOIN airport a_to ON f.`to` = a_to.airport_id
-        LEFT JOIN airport_geo ag_from ON a_from.airport_id = ag_from.airport_id
-        LEFT JOIN airport_geo ag_to ON a_to.airport_id = ag_to.airport_id
-        INNER JOIN airline al ON f.airline_id = al.airline_id
-        ORDER BY b.booking_id DESC
-        LIMIT 10
+SELECT 
+    b.booking_id,
+    b.seat,
+    b.price,
+    p.firstname,
+    p.lastname,
+    pd.country as passenger_country,
+    pd.city as passenger_city,
+    f.flightno,
+    f.departure,
+    f.arrival,
+    a_from.name as departure_airport,
+    ag_from.city as departure_city,
+    ag_from.country as departure_country,
+    a_to.name as arrival_airport,
+    ag_to.city as arrival_city,
+    ag_to.country as arrival_country,
+    al.airlinename
+FROM booking b
+INNER JOIN flight f ON b.flight_id = f.flight_id
+INNER JOIN passenger p ON b.passenger_id = p.passenger_id
+LEFT JOIN passengerdetails pd ON p.passenger_id = pd.passenger_id
+INNER JOIN airport a_from ON f.`from` = a_from.airport_id
+INNER JOIN airport a_to ON f.`to` = a_to.airport_id
+LEFT JOIN airport_geo ag_from ON a_from.airport_id = ag_from.airport_id
+LEFT JOIN airport_geo ag_to ON a_to.airport_id = ag_to.airport_id
+INNER JOIN airline al ON f.airline_id = al.airline_id
+WHERE f.departure >= CURDATE() AND f.departure < CURDATE() + INTERVAL 1 DAY
+LIMIT 10
     """
     
     cache_key_10 = get_cache_key(query_10)

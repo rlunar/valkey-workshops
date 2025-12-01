@@ -103,19 +103,22 @@ class PerformanceTest:
         # SQL queries
         self.READ_QUERY = text("""
             SELECT p.firstname, p.lastname, COUNT(*) as booking_count
-            FROM flughafendb.passenger p
-            JOIN flughafendb.booking b ON p.passenger_id = b.passenger_id
+            FROM flughafendb_large.passenger p
+            JOIN flughafendb_large.booking b ON p.passenger_id = b.passenger_id
             WHERE p.passenger_id = :passenger
             GROUP BY p.firstname, p.lastname
         """)
         
         self.WRITE_QUERY = text("""
-            INSERT INTO flughafendb.booking (flight_id, passenger_id, price, seat)
-            VALUES(:flight, :passenger, 1000.00, '1A')
+            INSERT INTO flughafendb_large.booking (flight_id, passenger_id, price, seat)
+            VALUES(:flight, :passenger, 1000.00, :seat)
         """)
         
         # Passenger pool for non-random mode
         self.passenger_pool = []
+        
+        # Flight pool for valid flight IDs
+        self.flight_pool = []
         
         self._setup_connections()
     
@@ -169,6 +172,9 @@ class PerformanceTest:
             if not self.random_passengers:
                 self._setup_passenger_pool()
             
+            # Always setup flight pool with valid flight IDs
+            self._setup_flight_pool()
+            
         except Exception as e:
             console.print(f"[red]✗ Connection error: {e}[/red]")
             sys.exit(1)
@@ -179,6 +185,19 @@ class PerformanceTest:
         pool_size = min(self.queries, 10000)  # Limit pool size
         self.passenger_pool = list(range(4, 4 + pool_size))
         console.print(f"[green]✓[/green] Passenger pool created: {len(self.passenger_pool)} IDs")
+    
+    def _setup_flight_pool(self):
+        """Fetch valid flight IDs from database"""
+        console.print(f"\n[cyan]Fetching valid flight IDs...[/cyan]")
+        try:
+            with self.engine_ro.connect() as conn:
+                result = conn.execute(text("SELECT flight_id FROM flight LIMIT 10000"))
+                self.flight_pool = [row[0] for row in result]
+            console.print(f"[green]✓[/green] Flight pool created: {len(self.flight_pool)} valid IDs")
+        except Exception as e:
+            console.print(f"[red]✗ Failed to fetch flight IDs: {e}[/red]")
+            # Fallback to a small range if query fails
+            self.flight_pool = list(range(1, 1000))
     
     def _should_read(self):
         """Determine if operation should be read or write based on read_ratio"""
@@ -237,7 +256,8 @@ class PerformanceTest:
         """Worker function executed by each thread"""
         for _ in range(self.queries):
             passenger_id = self._get_passenger_id()
-            flight_id = random.randrange(4, 35000)
+            flight_id = random.choice(self.flight_pool) if self.flight_pool else random.randrange(1, 1000)
+            seat = f"{random.randint(1, 99)}{random.choice('ABCDEFGHIJKL')}"  # Generate seat like "12A", "5C", etc.
             cache_key = f"bookings:{passenger_id}"
             
             start_time_ns = time.time_ns()
@@ -269,21 +289,37 @@ class PerformanceTest:
                         self.cache_miss += 1
                     self._record_metric(str(int(start_time_ns // 1_000_000_000)), query_time_ns, "cache_miss")
             else:
-                # Write operation
-                write_query = self.WRITE_QUERY.bindparams(flight=flight_id, passenger=passenger_id)
-                self._execute_write(self.engine_rw, write_query)
+                # Write operation - try multiple times with different seats if duplicate
+                max_retries = 5
+                write_success = False
                 
-                # Update cache after write with TTL
-                read_query = self.READ_QUERY.bindparams(passenger=passenger_id)
-                data = self._execute_read(self.engine_ro, read_query)
-                self.valkey_write.set(cache_key, str(data), px=self.ttl)
+                for retry in range(max_retries):
+                    try:
+                        write_query = self.WRITE_QUERY.bindparams(flight=flight_id, passenger=passenger_id, seat=seat)
+                        self._execute_write(self.engine_rw, write_query)
+                        write_success = True
+                        break
+                    except Exception as e:
+                        if "Duplicate entry" in str(e) and retry < max_retries - 1:
+                            # Generate a new seat and retry
+                            seat = f"{random.randint(1, 30)}{random.choice('ABCDEF')}"
+                            continue
+                        else:
+                            # Skip this write operation if we can't find a unique seat
+                            break
                 
-                end_time_ns = time.time_ns()
-                query_time_ns = end_time_ns - start_time_ns
-                
-                with self.lock:
-                    self.write_count += 1
-                self._record_metric(str(int(start_time_ns // 1_000_000_000)), query_time_ns, "write")
+                if write_success:
+                    # Update cache after write with TTL
+                    read_query = self.READ_QUERY.bindparams(passenger=passenger_id)
+                    data = self._execute_read(self.engine_ro, read_query)
+                    self.valkey_write.set(cache_key, str(data), px=self.ttl)
+                    
+                    end_time_ns = time.time_ns()
+                    query_time_ns = end_time_ns - start_time_ns
+                    
+                    with self.lock:
+                        self.write_count += 1
+                    self._record_metric(str(int(start_time_ns // 1_000_000_000)), query_time_ns, "write")
             
             # Update progress if available
             if progress_obj and progress_task is not None:
