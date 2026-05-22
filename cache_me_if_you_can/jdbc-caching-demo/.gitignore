@@ -1,0 +1,11 @@
+# Dependencies
+frontend/node_modules/
+
+# Build output
+backend/build/
+backend/bin/
+backend/.gradle/
+
+# IDE
+.idea/
+*.iml
