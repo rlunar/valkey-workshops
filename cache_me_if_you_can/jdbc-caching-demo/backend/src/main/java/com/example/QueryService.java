@@ -16,15 +16,18 @@ public class QueryService {
 
     static final String PRODUCT_CATALOG_QUERY =
         "SELECT " +
-        "location, " +
-        "COUNT(*) AS total_cinemas, " +
-        "AVG(capacity) AS avg_capacity, " +
-        "MAX(capacity) AS largest, " +
-        "MIN(capacity) AS smallest, " +
-        "SUM(capacity) AS total_seats " +
-        "FROM cinemas " +
-        "GROUP BY location " +
-        "ORDER BY total_seats DESC";
+        "al.airlinename AS airline, " +
+        "a.name AS base_airport, " +
+        "COUNT(f.flight_id) AS total_flights, " +
+        "COUNT(DISTINCT f.`to`) AS destinations, " +
+        "MIN(f.departure) AS first_flight, " +
+        "MAX(f.departure) AS last_flight " +
+        "FROM airline al " +
+        "JOIN airport a ON al.base_airport = a.airport_id " +
+        "JOIN flight f ON f.airline_id = al.airline_id " +
+        "GROUP BY al.airline_id, al.airlinename, a.name " +
+        "ORDER BY total_flights DESC " +
+        "LIMIT 25";
 
     @Value("${db.host}")                    private String dbHost;
     @Value("${db.port}")                    private String dbPort;
@@ -148,8 +151,8 @@ public class QueryService {
 
     private Connection openConnection(boolean useCache) throws SQLException {
         String url = useCache
-            ? "jdbc:aws-wrapper:postgresql://" + dbHost + ":" + dbPort + "/" + dbName + "?sslmode=disable"
-            : "jdbc:postgresql://" + dbHost + ":" + dbPort + "/" + dbName + "?sslmode=disable";
+            ? "jdbc:aws-wrapper:mysql://" + dbHost + ":" + dbPort + "/" + dbName
+            : "jdbc:mysql://" + dbHost + ":" + dbPort + "/" + dbName;
 
         Properties props = new Properties();
         props.setProperty("user", dbUser);
@@ -175,7 +178,7 @@ public class QueryService {
     private String fetchQueryPlan(String sql) {
         try (Connection c = openConnection(false);
              Statement stmt = c.createStatement();
-             ResultSet rs = stmt.executeQuery("EXPLAIN ANALYZE " + sql)) {
+             ResultSet rs = stmt.executeQuery("EXPLAIN " + sql)) {
             StringBuilder plan = new StringBuilder();
             while (rs.next()) plan.append(rs.getString(1)).append("\n");
             return plan.toString();
