@@ -9,3 +9,6 @@ backend/.gradle/
 # IDE
 .idea/
 *.iml
+
+# jqwik (property-based testing)
+.jqwik-database
