@@ -25,6 +25,16 @@ dependencies {
     implementation 'io.valkey:valkey-glide:2.3.0'
 
     implementation 'io.github.cdimascio:dotenv-java:3.0.0'
+
+    testImplementation 'net.jqwik:jqwik:1.9.2'
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+test {
+    useJUnitPlatform {
+        includeEngines 'jqwik', 'junit-jupiter'
+    }
 }
 
 bootJar {

@@ -1,6 +1,7 @@
 package com.example;
 
 import com.example.model.QueryResult;
+import com.example.validation.SqlValidator;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -58,6 +59,7 @@ public class QueryController {
 
     private ResponseEntity<?> runQuery(boolean useCache, boolean includePlan, String sql, String ttl) {
         try {
+            SqlValidator.validate(sql);
             QueryResult result = queryService.execute(useCache, includePlan, sql, ttl);
             return ResponseEntity.ok(result);
         } catch (SQLException e) {
