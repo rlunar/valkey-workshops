@@ -7,15 +7,18 @@ import styles from './App.module.css'
 const API = '/api'
 
 const DEFAULT_SQL = `SELECT
-  location,
-  COUNT(*) AS total_cinemas,
-  AVG(capacity) AS avg_capacity,
-  MAX(capacity) AS largest,
-  MIN(capacity) AS smallest,
-  SUM(capacity) AS total_seats
-FROM cinemas
-GROUP BY location
-ORDER BY total_seats DESC`
+    al.airlinename AS airline,
+    a.name AS base_airport,
+    COUNT(f.flight_id) AS total_flights,
+    COUNT(DISTINCT f.\`to\`) AS destinations,
+    MIN(f.departure) AS first_flight,
+    MAX(f.departure) AS last_flight
+FROM airline al
+JOIN airport a ON al.base_airport = a.airport_id
+JOIN flight f ON f.airline_id = al.airline_id
+GROUP BY al.airline_id, al.airlinename, a.name
+ORDER BY total_flights DESC
+LIMIT 25`
 
 export default function App() {
   const [sql, setSql] = useState(DEFAULT_SQL)
@@ -99,7 +102,7 @@ export default function App() {
       <header className={styles.header}>
         <div className={styles.headerInner}>
           <h1>AWS JDBC Wrapper — Remote Cache Plugin Demo</h1>
-          <p>Compare query latency between direct PostgreSQL and the JDBC cache plugin</p>
+          <p>Compare query latency between direct MariaDB and the JDBC cache plugin</p>
         </div>
       </header>
 
@@ -108,7 +111,7 @@ export default function App() {
         {/* Connection bar */}
         <section className={styles.connBar}>
           <div className={styles.connIndicators}>
-            <ConnDot label="PostgreSQL" status={connStatus.direct} />
+            <ConnDot label="MariaDB" status={connStatus.direct} />
             <ConnDot label="Valkey Cache" status={connStatus.cached} />
           </div>
           <div className={styles.connActions}>
@@ -179,7 +182,7 @@ export default function App() {
             disabled={loading.direct || !isConnected(connStatus.direct)}
             title={!isConnected(connStatus.direct) ? 'Connect first' : ''}
           >
-            {loading.direct ? '⏳ Running…' : '▶ Run Direct (PostgreSQL)'}
+            {loading.direct ? '⏳ Running…' : '▶ Run Direct (MariaDB)'}
           </button>
           <button
             className={`${styles.btn} ${styles.btnCached}`}
@@ -209,7 +212,7 @@ export default function App() {
           <section className={styles.card}>
             <div className={styles.resultMeta}>
               <span className={activeRun.cacheEnabled ? styles.tagCached : styles.tagDirect}>
-                {activeRun.cacheEnabled ? '⚡ Cache Plugin' : '🗄 Direct PostgreSQL'}
+                {activeRun.cacheEnabled ? '⚡ Cache Plugin' : '🗄 Direct MariaDB'}
               </span>
               <span>Run #{activeRun.runIndex}</span>
               <span>{activeRun.rowCount} rows</span>
@@ -232,7 +235,7 @@ export default function App() {
             <p className={styles.emptyHint}>
               {bothConnected
                 ? 'Try "Run Direct" then "Run Cached" multiple times to see the cache warm up'
-                : 'Both PostgreSQL and Valkey connections will be established'}
+                : 'Both MariaDB and Valkey connections will be established'}
             </p>
           </div>
         )}

@@ -14,7 +14,7 @@ export default function PerformanceChart({ direct, cached }) {
 
   // Bar chart data: one bar per mode per metric
   const latencyData = [
-    direct && { name: 'Direct (PostgreSQL)', value: direct.latencyMs, fill: DIRECT_COLOR },
+    direct && { name: 'Direct (MariaDB)', value: direct.latencyMs, fill: DIRECT_COLOR },
     cached && { name: 'Cached (Plugin)', value: cached.latencyMs, fill: CACHED_COLOR },
   ].filter(Boolean)
 

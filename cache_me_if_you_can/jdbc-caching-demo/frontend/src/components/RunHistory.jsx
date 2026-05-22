@@ -61,7 +61,7 @@ export default function RunHistory({ runs, activeId, onSelect }) {
 
       {/* Legend */}
       <div className={styles.legend}>
-        <span className={styles.legendDirect}>🗄 Direct PostgreSQL</span>
+        <span className={styles.legendDirect}>🗄 Direct MariaDB</span>
         <span className={styles.legendCached}>⚡ Cache Plugin</span>
         <span className={styles.legendStack}>■ Query/Cache &nbsp; ■ Fetch rows</span>
         <span className={styles.legendHint}>Click a bar to view results</span>
