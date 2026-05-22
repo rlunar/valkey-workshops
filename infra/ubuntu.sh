@@ -20,4 +20,16 @@ sudo apt install -y php php-cli
 curl -sS https://getcomposer.org/installer | php
 sudo mv composer.phar /usr/local/bin/composer
 
+# Install Java 17 (OpenJDK) — required for Spring Boot backend and Maven sample
+sudo apt install -y openjdk-17-jdk
+
+# Install Maven — required for the standalone jdbc-query-cache-sample project
+sudo apt install -y maven
+
+# Install Node.js via NVM (NVM is already installed above)
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+nvm install --lts
+nvm use --lts
+
 echo "Installation complete. Please restart your shell or run 'source ~/.bashrc' to use nvm and uv."
