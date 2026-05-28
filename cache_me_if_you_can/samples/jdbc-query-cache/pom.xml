@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.example</groupId>
+    <artifactId>jdbc-query-cache</artifactId>
+    <version>1.0-SNAPSHOT</version>
+    <packaging>jar</packaging>
+
+    <name>JDBC Query Cache Sample</name>
+    <description>Standalone sample demonstrating the AWS Advanced JDBC Wrapper Remote Query Cache Plugin with Valkey</description>
+
+    <properties>
+        <maven.compiler.source>17</maven.compiler.source>
+        <maven.compiler.target>17</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    </properties>
+
+    <dependencies>
+        <!-- AWS Advanced JDBC Wrapper with Remote Query Cache Plugin -->
+        <dependency>
+            <groupId>software.amazon.jdbc</groupId>
+            <artifactId>aws-advanced-jdbc-wrapper</artifactId>
+            <version>3.3.0</version>
+        </dependency>
+
+        <!-- Apache Commons Pool2 for connection pooling -->
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-pool2</artifactId>
+            <version>2.11.1</version>
+        </dependency>
+
+        <!-- Valkey Glide client for cache connectivity -->
+        <dependency>
+            <groupId>io.valkey</groupId>
+            <artifactId>valkey-glide</artifactId>
+            <version>2.3.0</version>
+        </dependency>
+
+        <!-- MariaDB JDBC connector -->
+        <dependency>
+            <groupId>org.mariadb.jdbc</groupId>
+            <artifactId>mariadb-java-client</artifactId>
+            <version>3.4.1</version>
+        </dependency>
+
+        <!-- MySQL Connector/J — required by the AWS JDBC Wrapper's driver registration
+             mechanism (MysqlConnectorJDriverHelper expects com.mysql.cj.jdbc.Driver on
+             the classpath when using the mysql:// URL scheme) -->
+        <dependency>
+            <groupId>com.mysql</groupId>
+            <artifactId>mysql-connector-j</artifactId>
+            <version>8.3.0</version>
+        </dependency>
+
+        <!-- SLF4J NOP — silences SLF4J "no provider" warnings and suppresses all
+             java.util.logging output from the AWS JDBC Wrapper and MySQL connector -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-nop</artifactId>
+            <version>2.0.13</version>
+        </dependency>
+
+        <!-- JUL-to-SLF4J bridge — routes java.util.logging (used by the AWS JDBC
+             Wrapper) through SLF4J, which then discards it via slf4j-nop -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>jul-to-slf4j</artifactId>
+            <version>2.0.13</version>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!-- exec-maven-plugin to run the sample via: mvn compile exec:exec
+                 Uses a forked JVM (exec:exec) instead of in-process (exec:java) so that
+                 background threads spawned by the AWS JDBC Wrapper, MySQL Connector/J,
+                 and Valkey Glide are terminated cleanly when the process exits. -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.1.0</version>
+                <configuration>
+                    <executable>java</executable>
+                    <arguments>
+                        <!-- Suppress Valkey Glide native access warnings -->
+                        <argument>--enable-native-access=ALL-UNNAMED</argument>
+                        <!-- Suppress sun.misc.Unsafe deprecation warnings from protobuf in valkey-glide -->
+                        <argument>--sun-misc-unsafe-memory-access=allow</argument>
+                        <!-- Suppress java.util.logging output from AWS JDBC Wrapper -->
+                        <argument>-Djava.util.logging.config.file=/dev/null</argument>
+                        <argument>-classpath</argument>
+                        <classpath/>
+                        <argument>com.example.BasicQueryCache</argument>
+                    </arguments>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>
