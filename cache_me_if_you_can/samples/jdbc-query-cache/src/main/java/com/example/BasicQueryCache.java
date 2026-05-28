@@ -76,7 +76,7 @@ public class BasicQueryCache {
                 + "JOIN airport a1 ON f.`from` = a1.airport_id "
                 + "JOIN airport a2 ON f.`to` = a2.airport_id "
                 + "JOIN airline al ON f.airline_id = al.airline_id "
-                + "WHERE f.departure > '2015-08-01' "
+                + "WHERE f.departure > '2026-05-27' "
                 + "ORDER BY f.departure "
                 + "LIMIT 20";
 
