@@ -1,7 +1,7 @@
 FROM mariadb:10.11
 
 # Build argument for the SQL dump file path (relative to build context)
-ARG DUMP_FILE=data/flughafendb_large_20251127_150159.sql.gz
+ARG DUMP_FILE=data/flughafendb_large_20260528_171359.sql.gz
 
 # Environment variables
 ENV MYSQL_ROOT_PASSWORD=flughafendb_password

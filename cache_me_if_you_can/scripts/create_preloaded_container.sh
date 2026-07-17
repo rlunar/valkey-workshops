@@ -1,7 +1,8 @@
 #!/bin/bash
+# Supported workflow for generating the preloaded workshop MariaDB image.
 set -e
 
-REGISTRY_USER="${1:-rlunar}"
+REGISTRY_USER="${1:-rlunaws}"
 IMAGE_NAME="flughafendb_mariadb"
 TAG="latest"
 
@@ -35,7 +36,7 @@ DUMP_FILE_RELATIVE="${LATEST_DUMP#$PROJECT_ROOT/}"
 
 # Build the image using Dockerfile with build arg
 cd "$PROJECT_ROOT"
-podman build -t ${REGISTRY_USER}/${IMAGE_NAME}:${TAG} \
+docker build -t ${REGISTRY_USER}/${IMAGE_NAME}:${TAG} \
     --build-arg DUMP_FILE="$DUMP_FILE_RELATIVE" \
     -f scripts/Dockerfile .
 
@@ -43,8 +44,8 @@ echo ""
 echo "Image created: ${REGISTRY_USER}/${IMAGE_NAME}:${TAG}"
 echo ""
 echo "To push:"
-echo "  podman login docker.io"
-echo "  podman push ${REGISTRY_USER}/${IMAGE_NAME}:${TAG}"
+echo "  docker login docker.io -u ${REGISTRY_USER}"
+echo "  docker push ${REGISTRY_USER}/${IMAGE_NAME}:${TAG}"
 echo ""
 echo "To run:"
-echo "  podman run -d -p 3306:3306 -e MYSQL_ROOT_PASSWORD=flughafendb_password --name flughafendb_mariadb ${REGISTRY_USER}/${IMAGE_NAME}:${TAG}"
+echo "  docker run -d -p 3306:3306 -e MYSQL_ROOT_PASSWORD=flughafendb_password --name flughafendb_mariadb ${REGISTRY_USER}/${IMAGE_NAME}:${TAG}"

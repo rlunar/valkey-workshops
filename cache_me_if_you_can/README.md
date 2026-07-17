@@ -58,6 +58,30 @@ CACHE_PORT=6379
 gunzip -c data/flughafendb_large_20251120_113432.sql.gz | mysql -u root -p
 ```
 
+### Preloaded MariaDB Container Image
+
+Use `scripts/create_preloaded_container.sh` as the supported workflow for generating the workshop's preloaded MariaDB image. The script finds the newest `data/*.sql.gz` dump, passes it to `scripts/Dockerfile`, and imports the database during the image build.
+
+Docker must be installed and running. From the project directory, run:
+
+```bash
+./scripts/create_preloaded_container.sh <registry-user>
+```
+
+The resulting image is tagged as `<registry-user>/flughafendb_mariadb:latest`. If the registry user is omitted, the script uses its configured default.
+
+To start a container from the generated image:
+
+```bash
+docker run -d \
+  -p 3306:3306 \
+  -e MYSQL_ROOT_PASSWORD=flughafendb_password \
+  --name flughafendb_mariadb \
+  <registry-user>/flughafendb_mariadb:latest
+```
+
+> **Legacy script:** `scripts/create_container_image.sh` is not the supported preloaded-image workflow. It creates a temporary Dockerfile, defers database initialization until the first container start, and includes container lifecycle commands after the build. It is retained only for compatibility and should not be used for new image generation.
+
 ## Running the Applications
 
 ### Airport App (Streamlit)
