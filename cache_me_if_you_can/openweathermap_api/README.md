@@ -1,161 +1,110 @@
 # OpenWeatherMap One Call API 4.0 Proxy
 
-A small Flask API that proxies requests to the [OpenWeatherMap One Call API 4.0](https://openweathermap.org/api/one-call-4). It keeps the OpenWeatherMap API key on the server, validates common request parameters, and returns upstream JSON responses to callers.
+A Flask proxy for the [OpenWeatherMap One Call API 4.0](https://openweathermap.org/api/one-call-4) with server-side API key handling, Valkey JSON cache-aside behavior, request timing, and safety-gated namespaced cache clearing.
 
-## Requirements
+## Run
 
-- Python 3.13 or later
-- Dependencies installed with `uv sync`
-- An OpenWeatherMap API key with access to One Call API 4.0
-
-Run commands in this document from the `cache_me_if_you_can` directory.
-
-## Configuration
-
-Add the API key to `cache_me_if_you_can/.env`:
-
-```dotenv
-OPENWEATHERMAP_API_KEY=your_api_key
-```
-
-The service also recognizes `OPENWEATHER_API_KEY` and `OWM_API_KEY`, but `OPENWEATHERMAP_API_KEY` is the preferred name.
-
-Optional settings:
-
-```dotenv
-OPENWEATHERMAP_BASE_URL=https://api.openweathermap.org/data/4.0/onecall
-OPENWEATHERMAP_TIMEOUT_SECONDS=10
-OPENWEATHERMAP_API_HOST=127.0.0.1
-OPENWEATHERMAP_API_PORT=5000
-FLASK_DEBUG=false
-```
-
-Never commit `.env` or expose the API key to clients. The proxy ignores any caller-provided `appid` parameter and always uses its server-side key.
-
-## Start the API
+From `cache_me_if_you_can`:
 
 ```bash
 uv run python -m openweathermap_api
 ```
 
-The service listens on `http://127.0.0.1:5000` by default.
+The service listens on `http://127.0.0.1:5000` by default. Configure `OPENWEATHERMAP_API_KEY` in `.env`; the repository `quickstart.sh` starts the JSON-enabled Valkey bundle on port `16379`.
+
+## Python clients
+
+The package exports two clients for direct use by other modules:
+
+```python
+from openweathermap_api import (
+    OpenWeatherMapClient,
+    OpenWeatherMapGeocodingClient,
+)
+```
+
+`OpenWeatherMapClient` reads One Call weather data. `OpenWeatherMapGeocodingClient.search()` resolves worldwide city queries through the Direct Geocoding API and can cache results independently under `openweathermap:geocoding:v1:cache:v1:response:*`. The API key is sent upstream but excluded from cache identity.
+
+Geocoding settings include:
+
+```dotenv
+OPENWEATHERMAP_GEOCODING_BASE_URL=https://api.openweathermap.org/geo/1.0/direct
+OPENWEATHERMAP_GEOCODING_CACHE_ENABLED=true
+OPENWEATHERMAP_GEOCODING_CACHE_HOST=localhost
+OPENWEATHERMAP_GEOCODING_CACHE_PORT=16379
+OPENWEATHERMAP_GEOCODING_CACHE_DB=0
+OPENWEATHERMAP_GEOCODING_CACHE_TTL_SECONDS=86400
+```
+
+Inspect cached geocoding metadata without blocking Valkey:
+
+```bash
+valkey-cli -p 16379 --scan \
+  --pattern 'openweathermap:geocoding:v1:cache:v1:response:*'
+```
 
 ## Endpoints
 
-### Service information
-
-```http
-GET /
+```text
+GET    /health
+GET    /current?lat={latitude}&lon={longitude}
+GET    /timeline/{1min|15min|1h|1day}?lat={latitude}&lon={longitude}
+GET    /alert/{alert_id}
+DELETE /cache
 ```
 
-Returns the service name and available endpoint patterns.
+Every JSON response includes `total_time_ms`; every response also includes `X-Total-Time-Ms` and `Server-Timing` headers.
 
-### Health check
+## Cache
 
-```http
-GET /health
-```
-
-Example response:
-
-```json
-{
-  "openweathermap_configured": true,
-  "status": "ok"
-}
-```
-
-The health endpoint does not make an upstream request. `openweathermap_configured` only indicates whether an API key was loaded.
-
-### Current weather
-
-```http
-GET /current?lat={latitude}&lon={longitude}
-```
-
-Example:
-
-```bash
-curl "http://127.0.0.1:5000/current?lat=33.44&lon=-94.04&units=metric&lang=en"
-```
-
-### Weather timelines
-
-```http
-GET /timeline/{interval}?lat={latitude}&lon={longitude}
-```
-
-Supported intervals:
-
-- `1min`
-- `15min`
-- `1h`
-- `1day`
-
-Example:
-
-```bash
-curl "http://127.0.0.1:5000/timeline/1h?lat=33.44&lon=-94.04&units=imperial"
-```
-
-### Weather alert details
-
-```http
-GET /alert/{alert_id}
-```
-
-Example:
-
-```bash
-curl "http://127.0.0.1:5000/alert/example-alert-id"
-```
-
-Use an alert identifier returned by another One Call endpoint.
-
-## Query parameters
-
-Location endpoints require:
-
-| Parameter | Description |
-| --- | --- |
-| `lat` | Latitude from `-90` through `90` |
-| `lon` | Longitude from `-180` through `180` |
-
-Common optional parameters:
-
-| Parameter | Description |
-| --- | --- |
-| `units` | `standard`, `metric`, or `imperial` |
-| `lang` | OpenWeatherMap localization language code |
-
-Additional query parameters are forwarded to OpenWeatherMap, except `appid`.
-
-## Errors
-
-Errors use JSON responses:
-
-```json
-{
-  "error": "Description of the error"
-}
-```
-
-Validation failures return HTTP `400`. Missing server configuration returns `503`. Network failures and invalid upstream responses return `502`. OpenWeatherMap client errors such as `401`, `404`, or `429` retain their upstream status and include upstream error details.
-
-## Package structure
+Responses are stored as Valkey JSON documents under versioned keys:
 
 ```text
-openweathermap_api/
-├── __init__.py   # Public package exports
-├── __main__.py   # python -m entry point
-├── app.py        # Flask application and routes
-├── client.py     # OpenWeatherMap HTTP client
-└── README.md
+openweathermap:onecall:v4:cache:v1:response:<resource>:location:{<lat>,<lon>}:query:<sha256>
 ```
 
-## Validation
+Inspect them without blocking Valkey:
 
-Compile the package and run the project test suite:
+```bash
+valkey-cli -p 16379 --scan \
+  --pattern 'openweathermap:onecall:v4:cache:v1:response:*'
+```
+
+Select and inspect one item:
+
+```bash
+SAMPLE_KEY="$(valkey-cli -p 16379 --scan \
+  --pattern 'openweathermap:onecall:v4:cache:v1:response:*' | head -n 1)"
+valkey-cli -p 16379 JSON.GET "$SAMPLE_KEY" '$' | jq -C .
+valkey-cli -p 16379 TTL "$SAMPLE_KEY"
+```
+
+Cache failures are fail-open, and only successful upstream responses are cached. `DELETE /cache` is disabled unless `OPENWEATHERMAP_CACHE_ALLOW_CLEAR=true`; when enabled, it unlinks only this namespace.
+
+## Relative-date examples
+
+Yesterday in New York City, beginning at local midnight:
+
+```bash
+NYC_YESTERDAY_START="$(python3 -c '
+from datetime import datetime, time, timedelta
+from zoneinfo import ZoneInfo
+zone = ZoneInfo("America/New_York")
+yesterday = datetime.now(zone).date() - timedelta(days=1)
+print(int(datetime.combine(yesterday, time.min, tzinfo=zone).timestamp()))
+')"
+curl "http://127.0.0.1:5000/timeline/1h?lat=40.7128&lon=-74.0060&units=metric&start=${NYC_YESTERDAY_START}" | jq -C .
+```
+
+Tomorrow in Lima, Peru:
+
+```bash
+curl "http://127.0.0.1:5000/timeline/1day?lat=-12.0464&lon=-77.0428&units=metric" | jq -C .
+```
+
+The daily response contains a `data` array whose `dt` values can be converted to `America/Lima` to select tomorrow's local date.
+
+## Validation
 
 ```bash
 uv run python -m compileall -q openweathermap_api
