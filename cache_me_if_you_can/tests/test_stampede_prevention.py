@@ -1,113 +1,108 @@
-"""
-Unit tests for stampede prevention demo.
+"""Isolated unit tests for weather-cache stampede prevention."""
 
-Tests the core functionality of distributed locking and stampede prevention.
-"""
+import fnmatch
+import json
 
-import sys
-from pathlib import Path
-
-# Add parent directory to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+import pytest
 
 from daos.weather_api_cache import WeatherAPICache
 
 
-def test_lock_acquisition():
-    """Test that lock can be acquired and released."""
-    cache = WeatherAPICache(verbose=False)
-    
-    # Test lock acquisition
+class FakeClient:
+    def __init__(self):
+        self.values = {}
+        self.closed = False
+
+    def ping(self):
+        return True
+
+    def set(self, key, value, nx=False, ex=None):
+        if nx and key in self.values:
+            return False
+        self.values[key] = value
+        return True
+
+    def setex(self, key, ttl, value):
+        self.values[key] = value
+        return True
+
+    def get(self, key):
+        return self.values.get(key)
+
+    def delete(self, key):
+        return int(self.values.pop(key, None) is not None)
+
+    def keys(self, pattern):
+        return [key for key in self.values if fnmatch.fnmatch(key, pattern)]
+
+    def flushdb(self):
+        self.values.clear()
+
+    def close(self):
+        self.closed = True
+
+
+class FakeCache:
+    cache_type = "valkey"
+    host = "fake"
+    port = 0
+
+    def __init__(self, fail_get=False):
+        self.client = FakeClient()
+        self.fail_get = fail_get
+
+    def get(self, key):
+        if self.fail_get:
+            raise ConnectionError("cache unavailable")
+        return self.client.get(key)
+
+    def set(self, key, value, ttl=None):
+        return self.client.setex(key, ttl, value)
+
+    def delete(self, key):
+        return bool(self.client.delete(key))
+
+    def flush_all(self):
+        self.client.flushdb()
+
+    def close(self):
+        self.client.close()
+
+
+def test_lock_acquisition_and_release():
+    cache = WeatherAPICache(cache=FakeCache())
     key = "test:lock:key"
-    assert cache.acquire_lock(key, timeout=5), "Should acquire lock on first attempt"
-    
-    # Test that second acquisition fails
-    assert not cache.acquire_lock(key, timeout=5), "Should not acquire lock when already held"
-    
-    # Release lock
+
+    assert cache.acquire_lock(key, timeout=5)
+    assert not cache.acquire_lock(key, timeout=5)
     cache.release_lock(key)
-    
-    # Test that lock can be acquired again
-    assert cache.acquire_lock(key, timeout=5), "Should acquire lock after release"
-    cache.release_lock(key)
-    
-    cache.close()
-    print("✓ Lock acquisition test passed")
+    assert cache.acquire_lock(key, timeout=5)
 
 
 def test_cache_operations():
-    """Test basic cache operations."""
-    cache = WeatherAPICache(verbose=False)
-    
-    # Test set and get
+    cache = WeatherAPICache(cache=FakeCache())
     key = "test:weather:us:12345"
     data = {"temp": 72.5, "condition": "sunny"}
-    
-    cache.set(key, data, ttl=60)
-    retrieved = cache.get(key)
-    
-    assert retrieved is not None, "Should retrieve cached data"
-    assert retrieved["temp"] == 72.5, "Should retrieve correct temperature"
-    assert retrieved["condition"] == "sunny", "Should retrieve correct condition"
-    
-    # Test delete
-    cache.delete(key)
-    assert cache.get(key) is None, "Should return None after delete"
-    
-    cache.close()
-    print("✓ Cache operations test passed")
+
+    assert cache.set(key, data, ttl=60)
+    assert cache.get(key) == data
+    assert cache.delete(key)
+    assert cache.get(key) is None
 
 
 def test_double_check_pattern():
-    """Test the double-check pattern after lock acquisition."""
-    cache = WeatherAPICache(verbose=False)
-    
+    cache = WeatherAPICache(cache=FakeCache())
     key = "test:weather:us:54321"
     data = {"temp": 68.0, "condition": "cloudy"}
-    
-    # Simulate: Thread 1 acquires lock
-    assert cache.acquire_lock(key, timeout=5), "Thread 1 should acquire lock"
-    
-    # Thread 1 populates cache
+
+    assert cache.acquire_lock(key, timeout=5)
     cache.set(key, data, ttl=60)
-    
-    # Thread 1 releases lock
     cache.release_lock(key)
-    
-    # Simulate: Thread 2 tries to acquire lock but finds data already cached
-    cached_data = cache.get(key)
-    assert cached_data is not None, "Thread 2 should find cached data"
-    assert cached_data["temp"] == 68.0, "Should retrieve correct data"
-    
-    # Cleanup
-    cache.delete(key)
-    cache.close()
-    print("✓ Double-check pattern test passed")
+    assert cache.get(key) == data
 
 
-if __name__ == "__main__":
-    print("Running stampede prevention tests...")
-    print()
-    
-    try:
-        test_lock_acquisition()
-        test_cache_operations()
-        test_double_check_pattern()
-        
-        print()
-        print("=" * 50)
-        print("✅ All tests passed!")
-        print("=" * 50)
-        
-    except AssertionError as e:
-        print()
-        print("=" * 50)
-        print(f"❌ Test failed: {e}")
-        print("=" * 50)
-        sys.exit(1)
-    except Exception as e:
-        print()
-        print("=" * 50)
-        print(f"❌ Error: {e}")
-        print("=" * 50)
-        sys.exit(1)
+def test_transport_failure_is_not_reported_as_a_cache_miss():
+    cache = WeatherAPICache(cache=FakeCache(fail_get=True), ping=False)
+
+    with pytest.raises(ConnectionError, match="cache unavailable"):
+        cache.get("weather:unavailable")

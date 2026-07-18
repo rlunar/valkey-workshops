@@ -1,7 +1,7 @@
 [project]
 name = "cache-me-if-you-can"
 version = "0.1.0"
-description = "Add your description here"
+description = "Hands-on Valkey caching patterns with relational databases"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
@@ -34,5 +34,15 @@ dependencies = [
     "watchdog>=6.0.0",
 ]
 
-[project.scripts]
-session-demo = "session_demo.app:app"
+[dependency-groups]
+dev = [
+    "pytest==8.4.1",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+pythonpath = ["."]
+testpaths = ["tests"]

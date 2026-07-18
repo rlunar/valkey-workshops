@@ -1,49 +1,53 @@
 #!/bin/bash
-set -e  # Exit on error
+set -euo pipefail
 
-# Start container
-docker run -d --rm --name flughafendb_mariadb \
-  -p 13306:3306 \
-  -e MYSQL_ROOT_PASSWORD=flughafendb_password \
-  rlunar/flughafendb_mariadb:10.11-20251127
+IMAGE="${1:-${IMAGE:-rlunaws/flughafendb_mariadb:latest}}"
+CONTAINER_NAME="${CONTAINER_NAME:-flughafendb_mariadb}"
+HOST_PORT="${HOST_PORT:-13306}"
 
-# Wait for MariaDB to be ready with retry logic
+if ! command -v docker >/dev/null 2>&1; then
+    echo "Error: Docker is required but was not found on PATH." >&2
+    exit 1
+fi
+
+docker run -d --rm --name "$CONTAINER_NAME" \
+    -p "$HOST_PORT:3306" \
+    -e MYSQL_ROOT_PASSWORD=flughafendb_password \
+    "$IMAGE"
+
 echo "Waiting for MariaDB to start..."
-for i in {1..30}; do
-    if docker exec flughafendb_mariadb mysqladmin ping -u root -pflughafendb_password --silent 2>/dev/null; then
-        echo "✓ MariaDB is ready"
+ready=0
+for attempt in {1..30}; do
+    if docker exec "$CONTAINER_NAME" mysqladmin ping \
+        -u root -pflughafendb_password --silent 2>/dev/null; then
+        ready=1
         break
     fi
-    echo "Attempt $i/30..."
+    echo "Attempt $attempt/30..."
     sleep 1
 done
 
-# Create database
-echo "Creating database..."
-docker exec flughafendb_mariadb mariadb -u root -pflughafendb_password \
-  -e "CREATE DATABASE IF NOT EXISTS flughafendb_large;"
+if [ "$ready" -ne 1 ]; then
+    echo "Error: MariaDB did not become ready in 30 seconds." >&2
+    exit 1
+fi
 
-# Create user
-echo "Creating user..."
-docker exec flughafendb_mariadb mariadb -u root -pflughafendb_password \
-  -e "CREATE USER IF NOT EXISTS 'flughafen_user'@'%' IDENTIFIED BY 'flughafen_password';"
+echo "Creating workshop database and user..."
+docker exec "$CONTAINER_NAME" mariadb -u root -pflughafendb_password \
+    -e "CREATE DATABASE IF NOT EXISTS flughafendb_large;"
+docker exec "$CONTAINER_NAME" mariadb -u root -pflughafendb_password \
+    -e "CREATE USER IF NOT EXISTS 'flughafen_user'@'%' IDENTIFIED BY 'flughafen_password';"
+docker exec "$CONTAINER_NAME" mariadb -u root -pflughafendb_password \
+    -e "GRANT ALL PRIVILEGES ON flughafendb_large.* TO 'flughafen_user'@'%';"
+docker exec "$CONTAINER_NAME" mariadb -u root -pflughafendb_password \
+    -e "GRANT PROCESS ON *.* TO 'flughafen_user'@'%';"
+docker exec "$CONTAINER_NAME" mariadb -u root -pflughafendb_password \
+    -e "FLUSH PRIVILEGES;"
 
-# Grant privileges
-echo "Granting privileges..."
-docker exec flughafendb_mariadb mariadb -u root -pflughafendb_password \
-  -e "GRANT ALL PRIVILEGES ON flughafendb_large.* TO 'flughafen_user'@'%';"
-
-docker exec flughafendb_mariadb mariadb -u root -pflughafendb_password \
-  -e "GRANT PROCESS ON *.* TO 'flughafen_user'@'%';"
-
-docker exec flughafendb_mariadb mariadb -u root -pflughafendb_password \
-  -e "FLUSH PRIVILEGES;"
-
-echo "✓ Setup complete!"
-echo ""
-echo "Connection details:"
+echo "Setup complete"
+echo "  Image: $IMAGE"
 echo "  Host: 127.0.0.1"
-echo "  Port: 13306"
+echo "  Port: $HOST_PORT"
 echo "  User: flughafen_user"
 echo "  Password: flughafen_password"
 echo "  Database: flughafendb_large"

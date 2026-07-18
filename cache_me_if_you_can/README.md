@@ -1,43 +1,36 @@
 # Cache Me If You Can - Valkey Workshop
 
-A comprehensive workshop demonstrating caching patterns with Valkey/Redis and relational databases.
+A hands-on workshop demonstrating caching patterns with Valkey/Redis and relational databases.
 
 ## Quick Start
 
 ### Prerequisites
 
-- Python 3.11+
+- Python 3.13+
 - [uv](https://docs.astral.sh/uv/) package manager
-- MySQL/MariaDB database
-- Valkey or Redis cache server
+- MySQL/MariaDB or PostgreSQL
+- Valkey or Redis
+- Docker, only when building the preloaded MariaDB image
 
 ### Installation
 
 ```bash
-# Install uv (if not already installed)
+# Install uv if needed
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# Clone the repository
-git clone <repository-url>
-cd cache_me_if_you_can
-
-# Install dependencies
+# From this project directory
 uv sync
 ```
 
 ### Configuration
 
 ```bash
-# Copy environment template
 cp .env.example .env
-
-# Edit .env with your settings
-nano .env
 ```
 
-Required configuration:
+At minimum, configure the database and cache endpoints:
+
 ```bash
-# Database
 DB_ENGINE=mysql
 DB_HOST=localhost
 DB_PORT=3306
@@ -45,32 +38,32 @@ DB_USER=root
 DB_PASSWORD=your_password
 DB_NAME=flughafendb_large
 
-# Cache
 CACHE_ENGINE=valkey
 CACHE_HOST=localhost
 CACHE_PORT=6379
 ```
 
+Cache authentication, TLS, database selection, timeouts, and health checks are available through `CACHE_USERNAME`, `CACHE_PASSWORD`, `CACHE_DB`, `CACHE_TLS`, `CACHE_TLS_CA_CERTS`, `CACHE_TLS_CERTFILE`, `CACHE_TLS_KEYFILE`, `CACHE_CONNECT_TIMEOUT`, `CACHE_SOCKET_TIMEOUT`, and `CACHE_HEALTH_CHECK_INTERVAL`.
+
+Destructive cache clearing is disabled by default. Set `CACHE_ALLOW_FLUSH_ALL=true` only when the configured cache is isolated for workshop use.
+
 ### Database Setup
 
+Import the checked-in database dump directly:
+
 ```bash
-# Import the database
-gunzip -c data/flughafendb_large_20251120_113432.sql.gz | mysql -u root -p
+gunzip -c data/flughafendb_large_20260528_171359.sql.gz | mysql -u root -p
 ```
 
 ### Preloaded MariaDB Container Image
 
-Use `scripts/create_preloaded_container.sh` as the supported workflow for generating the workshop's preloaded MariaDB image. The script finds the newest `data/*.sql.gz` dump, passes it to `scripts/Dockerfile`, and imports the database during the image build.
-
-Docker must be installed and running. From the project directory, run:
+Use `scripts/create_preloaded_container.sh` as the supported image-generation workflow. It finds the newest `data/*.sql.gz` dump and imports it during the image build:
 
 ```bash
 ./scripts/create_preloaded_container.sh <registry-user>
 ```
 
-The resulting image is tagged as `<registry-user>/flughafendb_mariadb:latest`. If the registry user is omitted, the script uses its configured default.
-
-To start a container from the generated image:
+The resulting image is tagged `<registry-user>/flughafendb_mariadb:latest`.
 
 ```bash
 docker run -d \
@@ -80,223 +73,137 @@ docker run -d \
   <registry-user>/flughafendb_mariadb:latest
 ```
 
-> **Legacy script:** `scripts/create_container_image.sh` is not the supported preloaded-image workflow. It creates a temporary Dockerfile, defers database initialization until the first container start, and includes container lifecycle commands after the build. It is retained only for compatibility and should not be used for new image generation.
+`scripts/create_container_image.sh` remains as a compatibility entry point and delegates to the supported script. It no longer creates a different image or performs container lifecycle operations.
 
 ## Running the Applications
 
-### Airport App (Streamlit)
-
-Interactive web application demonstrating cache-aside pattern:
+### Airport App
 
 ```bash
-# Using the convenience script
 ./scripts/run_airport_app.sh
-
-# Or directly with uv
+# Or
 uv run streamlit run airport_app.py
 ```
 
-The app will open at http://localhost:8501
+The application opens at <http://localhost:8501> and demonstrates cache-aside behavior, flight and passenger queries, performance metrics, and cache hit statistics.
 
-**Features:**
-- Flight details query (3-table JOIN)
-- Flight manifest query (3-table JOIN)
-- Passenger flights query (8-table JOIN - complex!)
-- Real-time performance metrics
-- Cache vs database latency comparison
-- Cache hit rate statistics
-- Random passenger selection
-- Multi-database support (MySQL, MariaDB, PostgreSQL)
+### Session Demo
+
+```bash
+uv run python session_demo/app.py
+```
+
+Set `PORT` to change the default port of `5001`. Debug mode is disabled by default and can be enabled locally with `FLASK_DEBUG=true`.
 
 ### Demo Scripts
 
-Run all demos:
 ```bash
+# Run all demos
 ./scripts/run_all_demos.sh
-```
 
-Or run individual demos:
-
-```bash
-# Cache-aside pattern demo
+# Individual patterns
 uv run python samples/demo_cache_aside.py
-
-# Weather API cache demo
 uv run python samples/demo_weather_api_cache.py
-
-# Write-through cache demo
 uv run python samples/demo_write_through_cache.py
-
-# Stampede prevention demo (distributed locking)
+uv run python samples/demo_write_behind_cache.py
 uv run python samples/demo_stampede_prevention.py --threads 10 --cities 3
-
-# Multi-threaded performance test
 uv run python samples/demo_multi_threaded_performance.py --users 4 --queries 10
 ```
 
 ### NLP to SQL
 
-Natural language to SQL query generation:
-
 ```bash
-# Interactive mode
 uv run python daos/nlp_to_sql.py tinyllama interactive
-
-# Demo mode
 uv run python daos/nlp_to_sql.py codellama
 ```
 
+## Caching Patterns
+
+### Cache-Aside
+
+- Read from cache first.
+- On a miss, read from the database.
+- Populate the cache for later requests.
+
+### Write-Through
+
+- Write to the database first.
+- Update the cache immediately afterward.
+- Keep database state authoritative.
+
+### Write-Behind
+
+- Publish the cache update and queue task in one Valkey transaction.
+- Move tasks to a processing list until the database transaction commits.
+- Retry failures up to `WRITE_BEHIND_MAX_RETRIES`.
+- Route exhausted or malformed tasks to `flight_updates_dead_letter`.
+- Recover tasks left in `flight_updates_processing` after a worker interruption.
+
+The write-behind worker is designed for one active workshop worker. Coordinate recovery before introducing concurrent workers.
+
+### External API Caching and Stampede Prevention
+
+- Cache expensive API calls with a TTL.
+- Use distributed locking to prevent duplicate upstream requests.
+- Propagate cache transport failures so they are not mistaken for misses or lock contention.
+
+## Testing
+
+The default suite uses local fakes and does not require running Valkey or a database:
+
+```bash
+uv sync
+uv run pytest
+```
+
+The scripts named `tests/test_enhanced_context.py`, `tests/test_nlp_sql_pretty.py`, `tests/test_semantic_search.py`, and `tests/test_sql_cleaning.py` are manual validation utilities and are intentionally excluded from default pytest collection because they load models, external services, or demonstration output.
+
 ## Project Structure
 
-```
+```text
 cache_me_if_you_can/
-├── core/                      # Centralized connection modules
-│   ├── rdbms.py              # Database connection manager
-│   ├── inmemory.py           # Cache connection manager
-│   └── README.md             # Core module documentation
-├── daos/                      # Data access objects
-│   ├── cache_aside.py        # Cache-aside pattern implementation
-│   └── nlp_to_sql.py         # NLP to SQL converter
-├── samples/                   # Demo applications
-│   ├── demo_cache_aside.py
-│   ├── demo_weather_api_cache.py
-│   ├── demo_write_through_cache.py
-│   ├── demo_stampede_prevention.py
-│   └── demo_multi_threaded_performance.py
-├── services/                  # Service layer
-│   └── weather_service.py    # Mock weather service
-├── knowledge_base/            # NLP to SQL knowledge base
-├── docs/                      # Documentation
-│   ├── REFACTORING_SUMMARY.md
-│   ├── MIGRATION_GUIDE.md
-│   └── AIRPORT_APP_REFACTORING.md
-├── scripts/                   # Utility scripts
-│   ├── run_airport_app.sh
-│   └── run_all_demos.sh
-├── airport_app.py            # Streamlit web application
-└── pyproject.toml            # Project dependencies
+├── core/               # Database and cache connection managers
+├── daos/               # Cache pattern and NLP data-access implementations
+├── samples/            # Interactive pattern demonstrations
+├── services/           # Supporting service layer
+├── session_demo/       # Flask session-caching demonstration
+├── tests/              # Isolated unit tests and manual validations
+├── docs/               # Concepts, implementation notes, and workshop content
+├── scripts/            # Application, database, and image utilities
+├── airport_app.py      # Streamlit workshop application
+└── pyproject.toml      # Runtime and development dependencies
 ```
-
-## Caching Patterns Demonstrated
-
-### 1. Cache-Aside (Lazy Loading)
-- Read from cache first
-- On miss, read from database
-- Store in cache for future requests
-- **Demo:** `samples/demo_cache_aside.py`
-
-### 2. Write-Through Cache
-- Write to database first
-- Immediately update cache
-- Ensures consistency
-- **Demo:** `samples/demo_write_through_cache.py`
-
-### 3. Cache with External API
-- Cache expensive API calls
-- Distributed locking to prevent stampede
-- TTL-based expiration
-- **Demo:** `samples/demo_weather_api_cache.py`
 
 ## Core Modules
 
-The project uses centralized connection management:
-
-### Database Connections (`core/rdbms.py`)
 ```python
-from core import get_db_engine
+from core import get_cache_client, get_db_engine
 
 engine = get_db_engine()
-with engine.connect() as conn:
-    result = conn.execute(query)
-```
-
-### Cache Connections (`core/inmemory.py`)
-```python
-from core import get_cache_client
-
 cache = get_cache_client()
-cache.set("key", "value", ttl=3600)
-value = cache.get("key")
 ```
 
-See `core/README.md` for detailed documentation.
-
-## Documentation
-
-- **[Core Module Documentation](core/README.md)** - Connection management
-- **[Refactoring Summary](docs/REFACTORING_SUMMARY.md)** - Code refactoring details
-- **[Migration Guide](docs/MIGRATION_GUIDE.md)** - How to use core modules
-- **[Airport App Refactoring](docs/AIRPORT_APP_REFACTORING.md)** - Streamlit app changes
+See [`core/README.md`](core/README.md) and [`docs/README.md`](docs/README.md) for additional documentation.
 
 ## Environment Variables
 
 | Variable | Description | Default |
-|----------|-------------|---------|
-| `DB_ENGINE` | Database type (mysql, mariadb, postgresql) | mysql |
-| `DB_HOST` | Database host | localhost |
-| `DB_PORT` | Database port | 3306 |
-| `DB_USER` | Database user | root |
-| `DB_PASSWORD` | Database password | |
-| `DB_NAME` | Database name | flughafendb_large |
-| `CACHE_ENGINE` | Cache type (redis, valkey, memcached) | valkey |
-| `CACHE_HOST` | Cache host | localhost |
-| `CACHE_PORT` | Cache port | 6379 |
-| `CACHE_TTL` | Default TTL in seconds | 3600 |
-| `OLLAMA_MODEL` | Model for NLP to SQL | codellama |
-| `OLLAMA_URL` | Ollama API URL | http://localhost:11434/api/generate |
-
-## Troubleshooting
-
-### Database Connection Issues
-```bash
-# Test database connection
-mysql -h localhost -u root -p -e "SELECT 1"
-
-# Check database exists
-mysql -h localhost -u root -p -e "SHOW DATABASES LIKE 'flughafendb%'"
-```
-
-### Cache Connection Issues
-```bash
-# Test Valkey connection
-valkey-cli ping
-
-# Or Redis
-redis-cli ping
-
-# Check if cache is running
-ps aux | grep valkey
-```
-
-### Import Errors
-```bash
-# Reinstall dependencies
-uv sync --reinstall
-
-# Or install specific package
-uv pip install streamlit
-```
-
-## Performance Tips
-
-1. **Database Indexes**: Ensure proper indexes on frequently queried columns
-2. **Cache TTL**: Adjust TTL based on data volatility
-3. **Connection Pooling**: Configure pool size based on concurrent users
-4. **Query Optimization**: Use EXPLAIN to analyze slow queries
-
-## Contributing
-
-See individual module READMEs for development guidelines:
-- `core/README.md` - Core module development
-- `docs/MIGRATION_GUIDE.md` - Code migration patterns
-
-## License
-
-[Add your license here]
-
-## Resources
-
-- [Valkey Documentation](https://valkey.io/docs/)
-- [Redis Documentation](https://redis.io/docs/)
-- [SQLAlchemy Documentation](https://docs.sqlalchemy.org/)
-- [Streamlit Documentation](https://docs.streamlit.io/)
+|---|---|---|
+| `DB_ENGINE` | Database type: mysql, mariadb, or postgresql | `mysql` |
+| `DB_HOST` | Database host | `localhost` |
+| `DB_PORT` | Database port | `3306` |
+| `DB_USER` | Database user | `root` |
+| `DB_PASSWORD` | Database password | empty |
+| `DB_NAME` | Database name | `flughafendb_large` |
+| `CACHE_ENGINE` | Cache type: redis, valkey, or memcached | `redis` |
+| `CACHE_HOST` | Cache host | `localhost` |
+| `CACHE_PORT` | Cache port | `6379` |
+| `CACHE_DB` | Redis/Valkey logical database | `0` |
+| `CACHE_TTL` | Default TTL in seconds | `3600` |
+| `CACHE_TLS` | Enable TLS with certificate verification | `false` |
+| `CACHE_CONNECT_TIMEOUT` | Connection timeout in seconds | `5` |
+| `CACHE_SOCKET_TIMEOUT` | Operation timeout in seconds | `5` |
+| `CACHE_HEALTH_CHECK_INTERVAL` | Connection health-check interval | `30` |
+| `CACHE_ALLOW_FLUSH_ALL` | Allow destructive workshop cache clearing | `false` |
+| `WRITE_BEHIND_MAX_RETRIES` | Attempts before dead-lettering | `3` |
+| `OLLAMA_MODEL` | Model used for NLP-to-SQL | `codellama` |

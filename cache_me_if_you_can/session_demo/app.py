@@ -4,12 +4,12 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from flask import Flask, render_template, request, redirect, url_for, session, flash
 from flask_session import Session
-import redis
 import mysql.connector
 from dotenv import load_dotenv
 
-# Add parent directory to path to import services
+# Add parent directory to path to import project modules
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from core import get_cache_client
 from services.weather_service import WeatherService
 
 # Load environment variables from root .env file
@@ -29,16 +29,13 @@ app.config["JSON_AS_ASCII"] = False
 def inject_url_prefix():
     return {'url_prefix': URL_PREFIX}
 
-# Configure Valkey (Redis-compatible) session storage
+# Configure Valkey/Redis session storage through the shared secure client.
+session_cache = get_cache_client(decode_responses=False)
 app.config["SESSION_TYPE"] = "redis"
 app.config["SESSION_PERMANENT"] = False
 app.config["SESSION_USE_SIGNER"] = True
 app.config["SESSION_KEY_PREFIX"] = "flight_session:"
-app.config["SESSION_REDIS"] = redis.Redis(
-    host=os.getenv("CACHE_HOST", "localhost"),
-    port=int(os.getenv("CACHE_PORT", 6379)),
-    decode_responses=False,  # Let Flask-Session handle decoding
-)
+app.config["SESSION_REDIS"] = session_cache.client
 
 Session(app)
 
@@ -247,5 +244,12 @@ def remove_flight(flight_id):
     return redirect(url_for('index'))
 
 
+def main():
+    """Run the session demo development server."""
+    debug = os.getenv("FLASK_DEBUG", "false").lower() in {"1", "true", "yes", "on"}
+    port = int(os.getenv("PORT", "5001"))
+    app.run(debug=debug, port=port)
+
+
 if __name__ == '__main__':
-    app.run(debug=True, port=5001)
+    main()

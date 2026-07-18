@@ -180,8 +180,8 @@ DB_NAME=flughafendb_large  # Was "airportdb"
 
 1. **Database Setup**
    ```bash
-   # Import the database
-   mysql -u root -p < data/flughafendb_large_20251120_113432.sql
+   # Import the checked-in compressed database dump
+   gunzip -c data/flughafendb_large_20260528_171359.sql.gz | mysql -u root -p
    ```
 
 2. **Cache Setup**

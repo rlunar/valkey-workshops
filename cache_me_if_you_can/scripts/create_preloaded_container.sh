@@ -1,51 +1,50 @@
 #!/bin/bash
 # Supported workflow for generating the preloaded workshop MariaDB image.
-set -e
+set -euo pipefail
 
 REGISTRY_USER="${1:-rlunaws}"
 IMAGE_NAME="flughafendb_mariadb"
 TAG="latest"
-
-echo "Creating pre-loaded MariaDB container image using Dockerfile..."
-
-# https://ws-assets-prod-iad-r-iad-ed304a55c2ca1aee.s3.us-east-1.amazonaws.com/f2be885b-fc0c-4fe7-9c3a-fe2c179a73eb/data/flughafendb_large_20251127_150159.sql.gz
-
-# Get script directory and project root
+IMAGE_TAG="${REGISTRY_USER}/${IMAGE_NAME}:${TAG}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
-
-# Verify Dockerfile exists
-if [ ! -f "$SCRIPT_DIR/Dockerfile" ]; then
-    echo "Error: Dockerfile not found at $SCRIPT_DIR/Dockerfile"
-    exit 1
-fi
-
-# Verify latest dump exists
 DATA_DIR="$PROJECT_ROOT/data"
-LATEST_DUMP=$(ls -t "$DATA_DIR"/*.sql.gz 2>/dev/null | head -1)
-if [ -z "$LATEST_DUMP" ]; then
-    echo "Error: No SQL dump found in $DATA_DIR. Run ./scripts/dump_mariadb.sh first"
+
+if ! command -v docker >/dev/null 2>&1; then
+    echo "Error: Docker is required but was not found on PATH." >&2
     exit 1
 fi
 
-echo "Using dump file: $LATEST_DUMP"
-echo "Building image (this will take 10-30 minutes)..."
+if [ ! -f "$SCRIPT_DIR/Dockerfile" ]; then
+    echo "Error: Dockerfile not found at $SCRIPT_DIR/Dockerfile" >&2
+    exit 1
+fi
 
-# Get relative path from project root to dump file (macOS compatible)
+LATEST_DUMP=""
+for dump_file in "$DATA_DIR"/*.sql.gz; do
+    [ -e "$dump_file" ] || continue
+    if [ -z "$LATEST_DUMP" ] || [ "$dump_file" -nt "$LATEST_DUMP" ]; then
+        LATEST_DUMP="$dump_file"
+    fi
+done
+
+if [ -z "$LATEST_DUMP" ]; then
+    echo "Error: No SQL dump found in $DATA_DIR. Run scripts/dump_mariadb.sh first." >&2
+    exit 1
+fi
+
 DUMP_FILE_RELATIVE="${LATEST_DUMP#$PROJECT_ROOT/}"
+echo "Creating preloaded MariaDB image: $IMAGE_TAG"
+echo "Using dump file: $LATEST_DUMP"
+echo "Building image (this can take 10-30 minutes)..."
 
-# Build the image using Dockerfile with build arg
-cd "$PROJECT_ROOT"
-docker build -t ${REGISTRY_USER}/${IMAGE_NAME}:${TAG} \
-    --build-arg DUMP_FILE="$DUMP_FILE_RELATIVE" \
-    -f scripts/Dockerfile .
+docker build \
+    --tag "$IMAGE_TAG" \
+    --build-arg "DUMP_FILE=$DUMP_FILE_RELATIVE" \
+    --file "$SCRIPT_DIR/Dockerfile" \
+    "$PROJECT_ROOT"
 
-echo ""
-echo "Image created: ${REGISTRY_USER}/${IMAGE_NAME}:${TAG}"
-echo ""
-echo "To push:"
-echo "  docker login docker.io -u ${REGISTRY_USER}"
-echo "  docker push ${REGISTRY_USER}/${IMAGE_NAME}:${TAG}"
-echo ""
-echo "To run:"
-echo "  docker run -d -p 3306:3306 -e MYSQL_ROOT_PASSWORD=flughafendb_password --name flughafendb_mariadb ${REGISTRY_USER}/${IMAGE_NAME}:${TAG}"
+echo
+echo "Image created: $IMAGE_TAG"
+echo "Push with: docker push $IMAGE_TAG"
+echo "Run with: docker run -d -p 3306:3306 -e MYSQL_ROOT_PASSWORD=flughafendb_password --name flughafendb_mariadb $IMAGE_TAG"
